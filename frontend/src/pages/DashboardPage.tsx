@@ -1,4 +1,13 @@
 import type { ReactNode } from 'react'
+
+import SensorList from '../features/sensors/SensorList'
+
+/**
+ * Placeholder sections for the greenhouse dashboard.
+ *
+ * The `id` on each section is a contract with later phases: Phase 2 fills
+ * #sensors, and the rest follow. Rename them only if you update the phase docs.
+ */
 type Section = {
   id: string
   title: string
@@ -19,7 +28,6 @@ const sections: Section[] = [
     title: 'Sensors',
     summary: 'Live readings from every connected device, one row per sensor.',
     arriving: 'Phase 2 — Factory Method',
-    next: true,
   },
   {
     id: 'configuration',
@@ -72,15 +80,23 @@ function SectionCard({ section }: { section: Section }) {
     <section
       id={section.id}
       aria-labelledby={`${section.id}-title`}
-      className={`flex flex-col gap-3 rounded-xl border p-5 ${
-        section.next ? 'border-moss-300 bg-moss-50' : 'border-line bg-white'
-      } ${section.id === 'overview' ? 'sm:col-span-2 lg:col-span-3' : ''}`}
+      className={`flex flex-col gap-3 rounded-xl border border-line bg-white p-5 ${
+        section.id === 'overview' || section.id === 'sensors'
+          ? 'sm:col-span-2 lg:col-span-3'
+          : ''
+      }`}
     >
       <h2 id={`${section.id}-title`} className="font-display text-lg font-semibold">
         {section.title}
       </h2>
-      <p className="text-sm text-ink-soft">{section.summary}</p>
-      <Tag highlight={section.next}>{section.arriving}</Tag>
+      {section.id === 'sensors' ? (
+        <SensorList />
+      ) : (
+        <>
+          <p className="text-sm text-ink-soft">{section.summary}</p>
+          <Tag>{section.arriving}</Tag>
+        </>
+      )}
     </section>
   )
 }

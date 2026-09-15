@@ -8,7 +8,7 @@ import logging
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from src.infrastructure.settings import get_settings
 
@@ -32,3 +32,11 @@ def check_database() -> bool:
         logger.warning("Database connectivity check failed: %s", exc)
         return False
     return True
+
+
+def get_db():
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()

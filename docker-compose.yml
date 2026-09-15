@@ -1,14 +1,16 @@
 services:
-  db:
+  postgres:
     image: postgres:16-alpine
-    container_name: greenhouse-db
+    container_name: greenhouse-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-greenhouse}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-greenhouse}
       POSTGRES_DB: ${POSTGRES_DB:-greenhouse}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Host port comes from .env (5433 here, because a Windows PostgreSQL
+      # service already holds 5432). Inside the network it is always 5432.
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - greenhouse_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -22,6 +24,50 @@ services:
       retries: 10
       start_period: 10s
 
+  backend:
+    build: ./backend
+    container_name: greenhouse-backend
+    restart: unless-stopped
+    environment:
+      # Host is the service name, not localhost: inside the network the backend
+      # reaches Postgres on the container port 5432. This value overrides
+      # anything in .env, because environment variables win over dotenv files.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-greenhouse}:${POSTGRES_PASSWORD:-greenhouse}@postgres:5432/${POSTGRES_DB:-greenhouse}
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # Bind mounts so --reload picks up edits made on the host.
+      - ./backend/src:/app/src
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/tests:/app/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: greenhouse-frontend
+    restart: unless-stopped
+    environment:
+      # Browser-facing: the browser runs on the host, so it uses localhost.
+      VITE_API_BASE_URL: http://localhost:8000
+      VITE_DOCKER: "1"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # Keeps the Linux node_modules built inside the image from being hidden
+      # by the Windows one on the host.
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+
 volumes:
   greenhouse_pgdata:
     name: greenhouse_pgdata
+  frontend_node_modules:
+    name: greenhouse_frontend_node_modules

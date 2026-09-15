@@ -16,6 +16,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from src.infrastructure.persistence import models  # noqa: E402,F401
+from src.infrastructure.persistence.base import Base  # noqa: E402
 from src.infrastructure.settings import get_settings  # noqa: E402
 
 config = context.config
@@ -25,9 +27,7 @@ if config.config_file_name is not None:
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-# No ORM models exist in Phase 1, so autogenerate has nothing to compare against.
-# Phase 2 sets this to the declarative Base metadata.
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

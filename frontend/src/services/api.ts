@@ -36,7 +36,53 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T
 }
 
-
+/** Ask the API whether it is up and whether it can reach PostgreSQL. */
 export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return request<HealthResponse>('/health', signal)
+}
+
+// ---------------------------------------------------------------------------
+// Sensors
+// ---------------------------------------------------------------------------
+
+/** Shape returned by GET and POST /api/sensors. Field names match the backend. */
+export interface SensorDto {
+  id: string
+  device_type: string
+  display_name: string
+  default_config: Record<string, unknown>
+}
+
+/** Creator keys the backend accepts. */
+export type SensorType = 'moisture' | 'light'
+
+export function fetchSensors(signal?: AbortSignal): Promise<SensorDto[]> {
+  return request<SensorDto[]>('/api/sensors', signal)
+}
+
+export async function createSensor(
+  type: SensorType,
+  displayName?: string,
+): Promise<SensorDto> {
+  const response = await fetch(`${API_BASE_URL}/api/sensors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ type, display_name: displayName ?? null }),
+  })
+
+  if (!response.ok) {
+    // The API sends { "detail": "..." } on a 400, which is worth showing.
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body = (await response.json()) as { detail?: string }
+      if (typeof body.detail === 'string') {
+        detail = body.detail
+      }
+    } catch {
+      // Response had no JSON body; keep the generic message.
+    }
+    throw new ApiError(detail, response.status)
+  }
+
+  return (await response.json()) as SensorDto
 }
