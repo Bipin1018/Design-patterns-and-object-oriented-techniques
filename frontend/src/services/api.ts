@@ -49,6 +49,28 @@ async function errorDetail(response: Response, fallback: string): Promise<string
   return fallback
 }
 
+async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers:
+      body === undefined
+        ? { Accept: 'application/json' }
+        : { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const detail = await errorDetail(response, `Request failed with status ${response.status}`)
+    throw new ApiError(detail, response.status)
+  }
+
+  // 204 No Content has no body to parse.
+  if (response.status === 204) {
+    return undefined as T
+  }
+  return (await response.json()) as T
+}
+
 /** Ask the API whether it is up and whether it can reach PostgreSQL. */
 export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return request<HealthResponse>('/health', signal)
@@ -73,19 +95,8 @@ export function fetchSensors(signal?: AbortSignal): Promise<SensorDto[]> {
   return request<SensorDto[]>('/api/sensors', signal)
 }
 
-export async function createSensor(type: SensorType, displayName?: string): Promise<SensorDto> {
-  const response = await fetch(`${API_BASE_URL}/api/sensors`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ type, display_name: displayName ?? null }),
-  })
-
-  if (!response.ok) {
-    const detail = await errorDetail(response, `Request failed with status ${response.status}`)
-    throw new ApiError(detail, response.status)
-  }
-
-  return (await response.json()) as SensorDto
+export function createSensor(type: SensorType, displayName?: string): Promise<SensorDto> {
+  return send<SensorDto>('POST', '/api/sensors', { type, display_name: displayName ?? null })
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +117,9 @@ export interface DeviceDto {
   device_family: string
   display_name: string
   default_config: Record<string, unknown>
+  /** Where the device sits. Both null when it is unassigned. */
+  zone_id: string | null
+  location_id: string | null
 }
 
 export function fetchDevices(
@@ -121,16 +135,92 @@ export function fetchDevices(
 }
 
 /** Create a whole matching kit for one family. Returns the four new devices. */
-export async function provisionDeviceFamily(family: DeviceFamily): Promise<DeviceDto[]> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/devices/provision?family=${encodeURIComponent(family)}`,
-    { method: 'POST', headers: { Accept: 'application/json' } },
-  )
+export function provisionDeviceFamily(family: DeviceFamily): Promise<DeviceDto[]> {
+  return send<DeviceDto[]>('POST', `/api/devices/provision?family=${encodeURIComponent(family)}`)
+}
 
-  if (!response.ok) {
-    const detail = await errorDetail(response, `Request failed with status ${response.status}`)
-    throw new ApiError(detail, response.status)
-  }
+/** Place a device in a zone, or pass null to clear its placement. */
+export function assignDeviceZone(deviceId: string, zoneId: string | null): Promise<DeviceDto> {
+  return send<DeviceDto>('PATCH', `/api/devices/${deviceId}/zone`, { zone_id: zoneId })
+}
 
-  return (await response.json()) as DeviceDto[]
+// ---------------------------------------------------------------------------
+// Locations and zones (Phase 4 - Builder)
+// ---------------------------------------------------------------------------
+
+export interface LocationSummaryDto {
+  id: string
+  name: string
+}
+
+/** A saved zone. Note location_id, never greenhouse_id. */
+export interface ZoneDto {
+  id: string
+  location_id: string
+  name: string
+  moisture_threshold_low: number
+  moisture_threshold_high: number
+  schedule: Record<string, unknown>
+}
+
+export interface LocationConfigDto {
+  location: LocationSummaryDto
+  zones: ZoneDto[]
+}
+
+/** One zone as the client sends it, on create or on add/edit. */
+export interface ZoneInput {
+  name: string
+  moisture_threshold_low: number
+  moisture_threshold_high: number
+  schedule?: Record<string, unknown>
+}
+
+export function fetchLocations(signal?: AbortSignal): Promise<LocationSummaryDto[]> {
+  return request<LocationSummaryDto[]>('/api/locations', signal)
+}
+
+export function fetchLocationConfig(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<LocationConfigDto> {
+  return request<LocationConfigDto>(`/api/locations/${locationId}/config`, signal)
+}
+
+export function createLocationConfig(
+  locationName: string,
+  zones: ZoneInput[],
+): Promise<LocationConfigDto> {
+  return send<LocationConfigDto>('POST', '/api/locations/config', {
+    location_name: locationName,
+    zones,
+  })
+}
+
+export function deleteLocation(locationId: string): Promise<void> {
+  return send<void>('DELETE', `/api/locations/${locationId}`)
+}
+
+export function addZone(locationId: string, zone: ZoneInput): Promise<ZoneDto> {
+  return send<ZoneDto>('POST', `/api/locations/${locationId}/zones`, zone)
+}
+
+export function updateZone(
+  locationId: string,
+  zoneId: string,
+  zone: ZoneInput,
+): Promise<ZoneDto> {
+  return send<ZoneDto>('PATCH', `/api/locations/${locationId}/zones/${zoneId}`, zone)
+}
+
+export function deleteZone(locationId: string, zoneId: string): Promise<void> {
+  return send<void>('DELETE', `/api/locations/${locationId}/zones/${zoneId}`)
+}
+
+export function fetchZoneDevices(
+  locationId: string,
+  zoneId: string,
+  signal?: AbortSignal,
+): Promise<DeviceDto[]> {
+  return request<DeviceDto[]>(`/api/locations/${locationId}/zones/${zoneId}/devices`, signal)
 }

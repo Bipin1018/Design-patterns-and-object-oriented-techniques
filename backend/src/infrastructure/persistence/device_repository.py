@@ -1,3 +1,9 @@
+"""Maps domain objects to and from rows in the devices table.
+
+This is the only place that knows both the domain entities and SQLAlchemy.
+Phase 2's sensor methods stay so /api/sensors keeps working; Phase 3 adds the
+device methods that handle sensors and actuators together.
+"""
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -102,6 +108,8 @@ class DeviceRepository:
             device_family=row.device_family,
             display_name=row.display_name or "",
             default_config=dict(row.default_config or {}),
+            zone_id=row.zone_id,
+            location_id=row.location_id,
         )
 
     @staticmethod

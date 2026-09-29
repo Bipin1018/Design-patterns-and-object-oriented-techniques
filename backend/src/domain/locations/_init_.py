@@ -1,0 +1,1 @@
+"""Location domain: entities, the config builder and its errors."""

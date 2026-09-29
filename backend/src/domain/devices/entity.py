@@ -22,3 +22,6 @@ class Device:
     device_family: str  # "simulation" or "edge"
     display_name: str
     default_config: dict[str, Any] = field(default_factory=dict)
+    # Phase 4 placement. Both None when the device is not in a zone.
+    zone_id: UUID | None = None
+    location_id: UUID | None = None
