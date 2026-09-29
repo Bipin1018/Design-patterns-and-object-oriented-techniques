@@ -8,6 +8,7 @@ from scalar_fastapi import get_scalar_api_reference
 from src.infrastructure.settings import get_settings
 from src.interfaces.api.health import router as health_router
 from src.interfaces.api.sensors import router as sensors_router
+from src.interfaces.api.devices import router as devices_router
 
 settings = get_settings()
 
@@ -30,6 +31,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(sensors_router)
+app.include_router(devices_router)
 
 @app.get("/", tags=["system"], summary="API discovery")
 def read_root() -> dict[str, str]:

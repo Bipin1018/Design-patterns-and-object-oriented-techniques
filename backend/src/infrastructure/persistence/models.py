@@ -1,4 +1,9 @@
-"""ORM model for the devices table."""
+"""ORM model for the devices table.
+
+One table holds every device. Phase 2 wrote sensors; Phase 3 adds actuators and
+a device_family column so a simulated kit and an edge kit can live side by side
+without getting mixed up.
+"""
 
 import uuid
 from datetime import datetime
@@ -21,6 +26,11 @@ class DeviceRow(Base):
     )
     device_type: Mapped[str] = mapped_column(String(64), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'sensor'"))
+    # Server default matters: it backfills the Phase 2 rows when the migration
+    # adds this column, so nothing ends up with a null family.
+    device_family: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'simulation'")
+    )
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     default_config: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
@@ -29,4 +39,7 @@ class DeviceRow(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    __table_args__ = (Index("ix_devices_role", "role"),)
+    __table_args__ = (
+        Index("ix_devices_role", "role"),
+        Index("ix_devices_family", "device_family"),
+    )
