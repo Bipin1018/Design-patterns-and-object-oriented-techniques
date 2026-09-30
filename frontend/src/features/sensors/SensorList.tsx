@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { createSensor, fetchSensors, type SensorDto, type SensorType } from '../../services/api'
+import SensorCard from './SensorCard'
 
 type Status = 'loading' | 'ready' | 'error'
 
@@ -80,22 +81,17 @@ export default function SensorList() {
       {sensors.length > 0 && (
         <ul className="divide-y divide-line">
           {sensors.map((sensor) => (
-            <li key={sensor.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-3">
-              <span className="font-medium">{sensor.display_name}</span>
-              <span className="rounded bg-glass-100 px-1.5 py-0.5 text-xs text-ink-soft">
-                {sensor.device_type}
-              </span>
-              <span className="text-xs text-ink-soft">{describeConfig(sensor.default_config)}</span>
-            </li>
+            <SensorCard
+              key={sensor.id}
+              sensor={sensor}
+              // A card only knows what it was given, so after it saves an
+              // interval or a tracking flag the list re-reads the sensors and
+              // hands the card its new values.
+              onSamplingChange={() => void load()}
+            />
           ))}
         </ul>
       )}
     </div>
   )
-}
-
-function describeConfig(config: Record<string, unknown>): string {
-  return Object.entries(config)
-    .map(([key, value]) => `${key.replaceAll('_', ' ')}: ${String(value)}`)
-    .join(' · ')
 }

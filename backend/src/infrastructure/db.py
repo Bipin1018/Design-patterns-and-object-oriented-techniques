@@ -1,10 +1,7 @@
-"""Database engine, session factory and connectivity check.
-
-Phase 1 has no ORM models. This module exists so the API can prove it reaches
-PostgreSQL, and so Phase 2 can hang models and repositories off the same engine.
-"""
+"""Database engine, session factory, connectivity check and session dependency."""
 
 import logging
+from collections.abc import Iterator
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -34,8 +31,9 @@ def check_database() -> bool:
     return True
 
 
-def get_db():
-    session = SessionLocal()
+def get_db() -> Iterator[Session]:
+    """FastAPI dependency: one session per request, always closed afterwards."""
+    session: Session = SessionLocal()
     try:
         yield session
     finally:

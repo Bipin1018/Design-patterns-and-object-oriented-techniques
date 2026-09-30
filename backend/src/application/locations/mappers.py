@@ -25,7 +25,10 @@ def zone_to_dto(row: ZoneRow) -> ZoneDto:
     )
 
 
-def location_config_to_dto(location_row: LocationRow, zone_rows: list[ZoneRow]) -> LocationConfigDto:
+def location_config_to_dto(
+    location_row: LocationRow,
+    zone_rows: list[ZoneRow],
+) -> LocationConfigDto:
     return LocationConfigDto(
         location=location_to_summary_dto(location_row),
         zones=[zone_to_dto(row) for row in zone_rows],

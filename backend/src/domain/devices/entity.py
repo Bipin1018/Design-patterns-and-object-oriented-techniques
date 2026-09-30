@@ -25,3 +25,8 @@ class Device:
     # Phase 4 placement. Both None when the device is not in a zone.
     zone_id: UUID | None = None
     location_id: UUID | None = None
+    # Phase 5 sampling. The sampler reads both of these to decide whether this
+    # device is due. They carry the same defaults as the columns, so a factory
+    # that says nothing about sampling still produces a valid device.
+    sampling_interval_seconds: int = 300
+    tracking_enabled: bool = True

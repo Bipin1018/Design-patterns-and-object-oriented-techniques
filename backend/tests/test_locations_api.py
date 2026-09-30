@@ -3,8 +3,8 @@
 These need the database, so run them with the stack up:
     docker compose exec backend pytest tests -q
 
-Each test makes its own location and removes it afterwards, so they can run in
-any order and leave no rows behind.
+Each test makes its own location and its own devices, and removes both
+afterwards, so they can run in any order and leave no rows behind.
 """
 
 from collections.abc import Iterator
@@ -12,6 +12,8 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from src.infrastructure.db import SessionLocal
+from src.infrastructure.persistence.models import DeviceRow
 from src.main import app
 
 client = TestClient(app)
@@ -44,10 +46,29 @@ def location() -> Iterator[dict]:
 
 
 @pytest.fixture
-def devices() -> list[dict]:
+def devices() -> Iterator[list[dict]]:
+    """One simulation kit, removed afterwards.
+
+    Phase 4 left this fixture without a teardown, so every run added four rows
+    that nothing ever deleted. There is no delete endpoint for a device, so the
+    cleanup goes through the session directly. Any readings those devices
+    collected go with them through ON DELETE CASCADE.
+    """
     response = client.post("/api/devices/provision?family=simulation")
     assert response.status_code == 201
-    return response.json()
+    created = response.json()
+
+    yield created
+
+    session = SessionLocal()
+    try:
+        for device in created:
+            row = session.get(DeviceRow, device["id"])
+            if row is not None:
+                session.delete(row)
+        session.commit()
+    finally:
+        session.close()
 
 
 # -- create and read --------------------------------------------------------
@@ -235,4 +256,6 @@ def test_assign_missing_device_returns_404(location: dict) -> None:
     missing = "00000000-0000-0000-0000-000000000000"
     zone_id = location["zones"][0]["id"]
 
-    assert client.patch(f"/api/devices/{missing}/zone", json={"zone_id": zone_id}).status_code == 404
+    response = client.patch(f"/api/devices/{missing}/zone", json={"zone_id": zone_id})
+
+    assert response.status_code == 404

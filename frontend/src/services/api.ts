@@ -86,6 +86,9 @@ export interface SensorDto {
   device_type: string
   display_name: string
   default_config: Record<string, unknown>
+  /** Phase 5 columns. The copy inside default_config is history, not the truth. */
+  sampling_interval_seconds: number
+  tracking_enabled: boolean
 }
 
 /** Creator keys the backend accepts. */
@@ -120,6 +123,9 @@ export interface DeviceDto {
   /** Where the device sits. Both null when it is unassigned. */
   zone_id: string | null
   location_id: string | null
+  /** Phase 5 sampling columns. */
+  sampling_interval_seconds: number
+  tracking_enabled: boolean
 }
 
 export function fetchDevices(
@@ -223,4 +229,51 @@ export function fetchZoneDevices(
   signal?: AbortSignal,
 ): Promise<DeviceDto[]> {
   return request<DeviceDto[]>(`/api/locations/${locationId}/zones/${zoneId}/devices`, signal)
+}
+
+// ---------------------------------------------------------------------------
+// Readings (Phase 5 — Adapter)
+// --------------------------------------------
+/** Where a reading came from. The adapter's signature, shown as a badge. */
+export type ReadingSource = 'simulation' | 'vendor' | 'mqtt'
+
+/** Matches ReadingDto on the backend, field for field. */
+export interface ReadingDto {
+  device_id: string
+  value: number
+  unit: string
+  source: string
+  /** ISO-8601 with an offset, e.g. 2026-08-28T09:00:00+00:00 */
+  recorded_at: string
+}
+
+/**
+ * Ask a device's adapter for a value now, and store it.
+ *
+ * A device on the mqtt protocol answers 400: it publishes for itself rather
+ * than responding to a request. Cards hide the button for those.
+ */
+export function takeReading(deviceId: string): Promise<ReadingDto> {
+  return send<ReadingDto>('POST', `/api/sensors/${deviceId}/read`)
+}
+
+/** Recent readings for a device, newest first. Pass limit 1 for just the latest. */
+export function fetchReadings(
+  deviceId: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<ReadingDto[]> {
+  return request<ReadingDto[]>(`/api/sensors/${deviceId}/readings?limit=${limit}`, signal)
+}
+
+/** Change how often the sampler records a device, or stop it entirely. */
+export function updateSampling(
+  deviceId: string,
+  samplingIntervalSeconds: number,
+  trackingEnabled: boolean,
+): Promise<DeviceDto> {
+  return send<DeviceDto>('PATCH', `/api/devices/${deviceId}/sampling`, {
+    sampling_interval_seconds: samplingIntervalSeconds,
+    tracking_enabled: trackingEnabled,
+  })
 }

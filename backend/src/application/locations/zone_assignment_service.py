@@ -50,4 +50,8 @@ def _to_device(row: DeviceRow) -> Device:
         default_config=dict(row.default_config or {}),
         zone_id=row.zone_id,
         location_id=row.location_id,
+        # Phase 5. Without these two the placement response would report the
+        # defaults for every device instead of what the row actually holds.
+        sampling_interval_seconds=row.sampling_interval_seconds,
+        tracking_enabled=row.tracking_enabled,
     )

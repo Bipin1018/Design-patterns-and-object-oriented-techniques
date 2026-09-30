@@ -22,6 +22,8 @@ def device_to_dto(device: Device) -> DeviceDto:
         default_config=device.default_config,
         zone_id=device.zone_id,
         location_id=device.location_id,
+        sampling_interval_seconds=device.sampling_interval_seconds,
+        tracking_enabled=device.tracking_enabled,
     )
 
 

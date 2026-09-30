@@ -42,10 +42,20 @@ def test_families_compose_the_phase_two_creators() -> None:
     """Sensor defaults still come from the Factory Method creators."""
     kit = SimulationDeviceFactory().create_device_set()
     moisture = next(d for d in kit if d.device_type == "moisture_sensor")
+    light = next(d for d in kit if d.device_type == "light_sensor")
 
     assert moisture.default_config["unit"] == "vwc"
-    assert moisture.default_config["sampling_interval_seconds"] == 300
-    assert moisture.default_config["protocol"] == "sim"  # added by the family
+    assert moisture.default_config["protocol"] == "simulation"  # set by the family
+    # Phase 5: the creator's interval reaches the column, not just the JSON.
+    assert moisture.sampling_interval_seconds == 300
+    assert light.sampling_interval_seconds == 60
+
+
+def test_edge_kit_reports_over_mqtt() -> None:
+    """Phase 5 renamed the edge protocol, so the selector skips these devices."""
+    kit = EdgeHardwareFactory().create_device_set()
+
+    assert {d.default_config["protocol"] for d in kit} == {"mqtt"}
 
 
 def test_devices_are_unsaved_before_the_repository_runs() -> None:

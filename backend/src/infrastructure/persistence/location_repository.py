@@ -144,7 +144,9 @@ class LocationRepository:
 
     def clear_devices_in_zone(self, zone_id: UUID) -> None:
         self._session.execute(
-            update(DeviceRow).where(DeviceRow.zone_id == zone_id).values(zone_id=None, location_id=None)
+            update(DeviceRow)
+            .where(DeviceRow.zone_id == zone_id)
+            .values(zone_id=None, location_id=None)
         )
 
     def place_device(self, device_row: DeviceRow, zone_row: ZoneRow) -> DeviceRow:

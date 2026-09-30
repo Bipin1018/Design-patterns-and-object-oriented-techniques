@@ -45,3 +45,20 @@ select = ["E", "F", "I", "UP", "B"]
 # alembic package as first-party and reorder env.py's imports.
 known-first-party = ["src"]
 known-third-party = ["alembic"]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 bans function calls in argument defaults, which is right for def f(x=[])
+# and wrong for FastAPI, where Depends() in a default is the dependency system
+# itself. These are declared safe rather than the rule turned off, so a genuine
+# mutable default is still caught.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]

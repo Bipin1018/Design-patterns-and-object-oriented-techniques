@@ -44,6 +44,10 @@ services:
       - ./backend/alembic:/app/alembic
       - ./backend/alembic.ini:/app/alembic.ini
       - ./backend/tests:/app/tests
+      # Not for --reload: this one carries the ruff and pytest configuration.
+      # Without it the Dockerfile's build-time copy wins, and editing the file
+      # on the host changes nothing the container can see.
+      - ./backend/pyproject.toml:/app/pyproject.toml
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,1 @@
+"""Sensor adapters. Each one implements SensorPort for a different source."""

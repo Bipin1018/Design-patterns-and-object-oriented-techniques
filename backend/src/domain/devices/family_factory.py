@@ -7,6 +7,12 @@ A greenhouse runs either against simulated devices or against edge hardware.
 Mixing the two makes no sense: a simulated pump cannot be driven by a GPIO pin.
 Each family factory therefore returns one coherent set, and the sensors in that
 set are still built by the Phase 2 creators rather than duplicated here.
+
+Phase 5 renamed the protocol values. Phase 3 wrote 'sim' and 'gpio-stub' as
+hints; Phase 5 turned them into the keys the adapter selector actually matches
+on, so they became 'simulation' and 'mqtt'. The gpio_pin and i2c_address
+settings stayed: a real edge controller is wired to a pin and reports over
+MQTT, so the two describe different things and do not contradict each other.
 """
 
 from abc import ABC, abstractmethod
@@ -38,6 +44,9 @@ def _sensor_as_device(sensor: Sensor, *, family: str, label: str, extra: dict[st
         device_family=family,
         display_name=label,
         default_config={**sensor.default_config, **extra},
+        # Carried from the creator, so a light sensor keeps its 60 seconds
+        # instead of falling back to the 300 default.
+        sampling_interval_seconds=sensor.sampling_interval_seconds,
     )
 
 
@@ -49,7 +58,7 @@ class SimulationDeviceFactory(DeviceFamilyFactory):
         return "simulation"
 
     def create_device_set(self) -> list[Device]:
-        shared = {"protocol": "sim"}
+        shared = {"protocol": "simulation"}
         return [
             _sensor_as_device(
                 get_creator("moisture").create_sensor(),
@@ -69,7 +78,7 @@ class SimulationDeviceFactory(DeviceFamilyFactory):
                 device_family=self.family_key,
                 display_name="Sim irrigation pump",
                 default_config={
-                    "protocol": "sim",
+                    "protocol": "simulation",
                     "flow_litres_per_minute": 4.5,
                     "max_runtime_seconds": 600,
                 },
@@ -80,7 +89,7 @@ class SimulationDeviceFactory(DeviceFamilyFactory):
                 device_family=self.family_key,
                 display_name="Sim grow light",
                 default_config={
-                    "protocol": "sim",
+                    "protocol": "simulation",
                     "channels": 2,
                     "max_brightness_percent": 100,
                 },
@@ -89,7 +98,7 @@ class SimulationDeviceFactory(DeviceFamilyFactory):
 
 
 class EdgeHardwareFactory(DeviceFamilyFactory):
-    """Stub hardware kit: same shape, wired to pins instead of software."""
+    """Stub hardware kit: same shape, reporting over MQTT instead of in software."""
 
     @property
     def family_key(self) -> str:
@@ -101,13 +110,13 @@ class EdgeHardwareFactory(DeviceFamilyFactory):
                 get_creator("moisture").create_sensor(),
                 family=self.family_key,
                 label="Edge soil moisture probe",
-                extra={"protocol": "gpio-stub", "gpio_pin": 4},
+                extra={"protocol": "mqtt", "gpio_pin": 4},
             ),
             _sensor_as_device(
                 get_creator("light").create_sensor(),
                 family=self.family_key,
                 label="Edge ambient light probe",
-                extra={"protocol": "gpio-stub", "i2c_address": "0x23"},
+                extra={"protocol": "mqtt", "i2c_address": "0x23"},
             ),
             Device(
                 device_type="water_pump",
@@ -115,7 +124,7 @@ class EdgeHardwareFactory(DeviceFamilyFactory):
                 device_family=self.family_key,
                 display_name="Edge relay pump",
                 default_config={
-                    "protocol": "gpio-stub",
+                    "protocol": "mqtt",
                     "gpio_pin": 17,
                     "flow_litres_per_minute": 2.0,
                     "max_runtime_seconds": 300,
@@ -127,7 +136,7 @@ class EdgeHardwareFactory(DeviceFamilyFactory):
                 device_family=self.family_key,
                 display_name="Edge LED driver",
                 default_config={
-                    "protocol": "gpio-stub",
+                    "protocol": "mqtt",
                     "gpio_pin": 27,
                     "channels": 4,
                     "max_brightness_percent": 80,

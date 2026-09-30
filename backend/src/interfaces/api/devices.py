@@ -9,9 +9,12 @@ from sqlalchemy.orm import Session
 from src.application.devices.dto import DeviceDto
 from src.application.devices.family_service import DeviceFamilyService
 from src.application.devices.mappers import device_to_dto, devices_to_dtos
+from src.application.devices.sampling_service import DeviceNotFoundError, SamplingService
 from src.application.locations.config_service import LocationNotFoundError
 from src.application.locations.zone_assignment_service import ZoneAssignmentService
+from src.application.readings.dto import UpdateSamplingRequestDto
 from src.domain.devices.family_factory import available_families
+from src.domain.devices.sampling import MIN_SAMPLING_INTERVAL_SECONDS
 from src.infrastructure.db import get_db
 from src.infrastructure.persistence.device_repository import DeviceRepository
 from src.infrastructure.persistence.location_repository import LocationRepository
@@ -27,6 +30,10 @@ def get_assignment_service(session: Session = Depends(get_db)) -> ZoneAssignment
     return ZoneAssignmentService(LocationRepository(session))
 
 
+def get_sampling_service(session: Session = Depends(get_db)) -> SamplingService:
+    return SamplingService(DeviceRepository(session))
+
+
 class AssignZoneRequest(BaseModel):
     """Body of PATCH /api/devices/{id}/zone.
 
@@ -34,7 +41,10 @@ class AssignZoneRequest(BaseModel):
     client cannot send one that disagrees with it.
     """
 
-    zone_id: UUID | None = Field(default=None, description="Zone to place the device in, or null to clear.")
+    zone_id: UUID | None = Field(
+        default=None,
+        description="Zone to place the device in, or null to clear.",
+    )
 
 
 @router.get("", response_model=list[DeviceDto], summary="List devices")
@@ -78,3 +88,29 @@ def assign_zone(
         return device_to_dto(service.assign(device_id, payload.zone_id))
     except LocationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+# -- Phase 5: sampling ------------------------------------------------------
+
+
+@router.patch(
+    "/{device_id}/sampling",
+    response_model=DeviceDto,
+    summary="Change how often a device is sampled",
+    description=(
+        f"Minimum interval is {MIN_SAMPLING_INTERVAL_SECONDS} seconds. Setting "
+        "tracking_enabled to false stops the sampler for this device; a manual "
+        "read still works."
+    ),
+)
+def update_sampling(
+    device_id: UUID,
+    payload: UpdateSamplingRequestDto,
+    service: SamplingService = Depends(get_sampling_service),
+) -> DeviceDto:
+    try:
+        return service.update_sampling(device_id, payload)
+    except DeviceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
