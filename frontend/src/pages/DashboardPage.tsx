@@ -2,13 +2,14 @@ import { useState, type ReactNode } from 'react'
 
 import LocationConfigWizard from '../components/config/LocationConfigWizard'
 import DeviceList from '../components/devices/DeviceList'
+import { StrategyPanel } from '../features/automation/StrategyPanel'
 import SensorList from '../features/sensors/SensorList'
 
 /**
  * Placeholder sections for the greenhouse dashboard.
  *
  * The `id` on each section is a contract with later phases: Phase 2 filled
- * #sensors, Phase 3 #devices, Phase 4 #configuration.
+ * #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation.
  */
 type Section = {
   id: string
@@ -46,7 +47,7 @@ const sections: Section[] = [
     id: 'automation',
     title: 'Automation',
     summary: 'Rules that decide when to water, vent or switch on the lamps.',
-    arriving: 'A later phase',
+    arriving: 'Phase 6 — Strategy',
   },
   {
     id: 'controls',
@@ -62,7 +63,7 @@ const sections: Section[] = [
   },
 ]
 
-const WIDE = new Set(['overview', 'configuration', 'sensors', 'devices'])
+const WIDE = new Set(['overview', 'configuration', 'sensors', 'devices', 'automation'])
 
 export default function DashboardPage() {
   // Bumped whenever the wizard changes a location or zone, so the device
@@ -119,6 +120,8 @@ function SectionCard({
         <SensorList />
       ) : section.id === 'devices' ? (
         <DeviceList configVersion={configVersion} />
+      ) : section.id === 'automation' ? (
+        <StrategyPanel configVersion={configVersion} />
       ) : (
         <>
           <p className="text-sm text-ink-soft">{section.summary}</p>

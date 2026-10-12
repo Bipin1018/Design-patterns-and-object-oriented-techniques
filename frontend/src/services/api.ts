@@ -233,7 +233,8 @@ export function fetchZoneDevices(
 
 // ---------------------------------------------------------------------------
 // Readings (Phase 5 — Adapter)
-// --------------------------------------------
+// ---------------------------------------------------------------------------
+
 /** Where a reading came from. The adapter's signature, shown as a badge. */
 export type ReadingSource = 'simulation' | 'vendor' | 'mqtt'
 
@@ -276,4 +277,73 @@ export function updateSampling(
     sampling_interval_seconds: samplingIntervalSeconds,
     tracking_enabled: trackingEnabled,
   })
+}
+
+// ---------------------------------------------------------------------------
+// Automation (Phase 6 — Strategy)
+// ---------------------------------------------------------------------------
+
+/** One algorithm, described by itself. The dropdown never hardcodes a key. */
+export interface StrategyOptionDto {
+  key: string
+  label: string
+  description: string
+}
+
+/** A location's saved choice. persisted is false while the default is in use. */
+export interface StrategyRuleDto {
+  location_id: string
+  strategy_key: string
+  parameters: Record<string, unknown>
+  updated_at: string | null
+  persisted: boolean
+}
+
+/** One zone's verdict, with the numbers the strategy saw. */
+export interface ZoneRecommendationDto {
+  zone_id: string
+  zone_name: string
+  action: string
+  reason: string
+  score: number | null
+  moisture: number | null
+  light: number | null
+  moisture_low: number
+  moisture_high: number
+  recorded_at: string | null
+  source_device_id: string | null
+}
+
+/** The headline for a location, with the per-zone results underneath. */
+export interface EvaluationDto {
+  location_id: string
+  strategy_key: string
+  action: string
+  reason: string
+  zones: ZoneRecommendationDto[]
+}
+
+export function fetchStrategies(signal?: AbortSignal): Promise<StrategyOptionDto[]> {
+  return request<StrategyOptionDto[]>('/api/automation/strategies', signal)
+}
+
+export function fetchAutomationRule(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<StrategyRuleDto> {
+  return request<StrategyRuleDto>(`/api/locations/${locationId}/automation`, signal)
+}
+
+export function saveAutomationRule(
+  locationId: string,
+  strategyKey: string,
+): Promise<StrategyRuleDto> {
+  return send<StrategyRuleDto>('PUT', `/api/locations/${locationId}/automation`, {
+    strategy_key: strategyKey,
+  })
+}
+
+/** Evaluate with the saved key. There is no override parameter by design. */
+export function evaluateAutomation(locationId: string): Promise<EvaluationDto> {
+  return send<EvaluationDto>('POST', `/api/locations/${locationId}/automation/evaluate`)
 }

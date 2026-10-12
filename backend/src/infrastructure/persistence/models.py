@@ -3,6 +3,7 @@
 Phase 2 added devices. Phase 3 added device_family. Phase 4 added locations and
 zones, plus the two nullable columns on devices that record where a device sits.
 Phase 5 adds sensor_readings and the two sampling columns the sampler reads.
+Phase 6 adds automation_rules: which strategy a location decides with.
 """
 
 import uuid
@@ -117,19 +118,13 @@ class DeviceRow(Base):
 
 
 class ReadingRow(Base):
-    """One stored sensor reading.
-
-    Append-only: nothing ever updates a row here. A manual read, the simulation
-    sampler and (from Phase 12) MQTT ingest all insert through the same path.
-    """
-
     __tablename__ = "sensor_readings"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    # CASCADE, unlike the SET NULL columns on devices. A reading with no device
-    # is meaningless, whereas a device with no zone is perfectly normal.
+    # CASCADE: deleting a device takes its readings with it. A reading with no
+    # device is meaningless, whereas a device with no zone is perfectly normal.
     device_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
     )
@@ -148,4 +143,45 @@ class ReadingRow(Base):
     # LIMIT 1 uses this index as it stands.
     __table_args__ = (
         Index("ix_sensor_readings_device_recorded_at", "device_id", "recorded_at"),
+    )
+
+
+class AutomationRuleRow(Base):
+    """Which strategy a location decides with.
+
+    One row per location, enforced by the UNIQUE on location_id. That makes
+    "one active strategy per location" something PostgreSQL refuses to break,
+    rather than something the service has to remember.
+
+    A location with no row has never had a strategy chosen. The service reads
+    that as the default rather than as an error.
+    """
+
+    __tablename__ = "automation_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    # CASCADE: deleting a location takes its rule with it, the same way it
+    # takes its zones. A rule with no location decides nothing.
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("locations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    # The key, not the class. The database stores a word; the domain owns what
+    # that word means. Renaming a class never needs a migration.
+    strategy_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Tuning numbers for a strategy that wants them. Stored and returned from
+    # this phase on; nothing reads it yet. The column exists so that adding a
+    # tuned strategy later is a code change, not a migration.
+    parameters: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
