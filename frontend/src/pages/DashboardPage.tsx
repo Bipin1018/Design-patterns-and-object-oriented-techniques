@@ -2,14 +2,13 @@ import { useState, type ReactNode } from 'react'
 
 import LocationConfigWizard from '../components/config/LocationConfigWizard'
 import DeviceList from '../components/devices/DeviceList'
+import OverviewPanel from '../components/overview/OverviewPanel'
 import { StrategyPanel } from '../features/automation/StrategyPanel'
 import SensorList from '../features/sensors/SensorList'
 
 /**
- * Placeholder sections for the greenhouse dashboard.
- *
- * The `id` on each section is a contract with later phases: Phase 2 filled
- * #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation.
+ * Sections of the greenhouse dashboard. Each `id` is a contract with the phase that fills it:
+ * Phase 2 #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation, Phase 7 #overview.
  */
 type Section = {
   id: string
@@ -22,8 +21,8 @@ const sections: Section[] = [
   {
     id: 'overview',
     title: 'Overview',
-    summary: 'Temperature, humidity and light for the whole greenhouse at a glance.',
-    arriving: 'A later phase',
+    summary: 'Devices, latest readings, strategy and recommendation for one location.',
+    arriving: 'Phase 7 — Facade',
   },
   {
     id: 'configuration',
@@ -66,8 +65,6 @@ const sections: Section[] = [
 const WIDE = new Set(['overview', 'configuration', 'sensors', 'devices', 'automation'])
 
 export default function DashboardPage() {
-  // Bumped whenever the wizard changes a location or zone, so the device
-  // list reloads its zone options and placements.
   const [configVersion, setConfigVersion] = useState(0)
 
   return (
@@ -75,8 +72,8 @@ export default function DashboardPage() {
       <header className="space-y-1">
         <h1 className="font-display text-3xl font-semibold text-moss-700">Dashboard</h1>
         <p className="max-w-xl text-ink-soft">
-          Locations, sensors and device families are live. The remaining sections are reserved
-          for the phase that builds them.
+          Overview, locations, sensors, device families and automation are live. The remaining
+          sections are reserved for the phase that builds them.
         </p>
       </header>
 
@@ -114,7 +111,9 @@ function SectionCard({
       <h2 id={`${section.id}-title`} className="font-display text-lg font-semibold">
         {section.title}
       </h2>
-      {section.id === 'configuration' ? (
+      {section.id === 'overview' ? (
+        <OverviewPanel configVersion={configVersion} />
+      ) : section.id === 'configuration' ? (
         <LocationConfigWizard onChange={onConfigChange} />
       ) : section.id === 'sensors' ? (
         <SensorList />

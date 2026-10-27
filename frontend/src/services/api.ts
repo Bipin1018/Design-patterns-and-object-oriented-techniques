@@ -347,3 +347,57 @@ export function saveAutomationRule(
 export function evaluateAutomation(locationId: string): Promise<EvaluationDto> {
   return send<EvaluationDto>('POST', `/api/locations/${locationId}/automation/evaluate`)
 }
+
+// ---------------------------------------------------------------------------
+// Overview (Phase 7 — Facade)
+// ---------------------------------------------------------------------------
+
+export interface DeviceCountsDto {
+  sensor: number
+  actuator: number
+}
+
+export interface OverviewDeviceDto {
+  id: string
+  device_type: string
+  role: string
+  display_name: string | null
+}
+
+export interface OverviewReadingDto {
+  device_id: string
+  value: number
+  unit: string
+  recorded_at: string
+  tracking_enabled: boolean
+  sampling_interval_seconds: number
+}
+
+export interface OverviewZoneDto {
+  id: string
+  name: string
+  moisture_threshold_low: number
+  moisture_threshold_high: number
+  devices: OverviewDeviceDto[]
+  latest_readings: OverviewReadingDto[]
+}
+
+export interface RecommendationDto {
+  action: string
+  reason: string
+}
+
+export interface LocationOverviewDto {
+  location: LocationSummaryDto
+  device_counts: DeviceCountsDto
+  zones: OverviewZoneDto[]
+  strategy_key: string | null
+  last_recommendation: RecommendationDto | null
+}
+
+export function fetchOverview(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<LocationOverviewDto> {
+  return request<LocationOverviewDto>(`/api/locations/${locationId}/overview`, signal)
+}
