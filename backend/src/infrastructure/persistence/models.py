@@ -185,3 +185,25 @@ class AutomationRuleRow(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+class ActuatorStateRow(Base):
+    """Phase 8. The current lifecycle state of one actuator.
+
+    One row per actuator, keyed by the device itself, so there is no second id
+    to keep in step. CASCADE, because a state with no device means nothing.
+    The row is updated in place on every legal transition. An illegal one is
+    refused in the domain and never reaches this table.
+    """
+
+    __tablename__ = "actuator_states"
+
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # off | idle | running | error | maintenance. The list of legal values and
+    # the moves between them live in domain/actuators/state.py, not here.
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )    

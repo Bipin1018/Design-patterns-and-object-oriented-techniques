@@ -10,6 +10,7 @@ import {
   type DeviceFamily,
   type ZoneDto,
 } from '../../services/api'
+import ActuatorStateBadge from './ActuatorStateBadge'
 import DeviceFamilySwitcher from './DeviceFamilySwitcher'
 
 type Status = 'loading' | 'ready' | 'error'
@@ -40,6 +41,20 @@ export default function DeviceList({ configVersion = 0 }: { configVersion?: numb
       if (signal?.aborted) return
       setStatus('error')
       setError(caught instanceof Error ? caught.message : 'Could not load devices.')
+    }
+  }, [])
+
+  /**
+   * Re-read the devices after an actuator changes state. Same request as load,
+   * but the list stays on screen instead of flashing "Loading devices…".
+   * The badge shows what the API returns, never a value React made up.
+   */
+  const refresh = useCallback(async (selected: DeviceFamily) => {
+    try {
+      setDevices(await fetchDevices({ family: selected }))
+      setError(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not reload devices.')
     }
   }, [])
 
@@ -140,6 +155,8 @@ export default function DeviceList({ configVersion = 0 }: { configVersion?: numb
                   {describeConfig(device.default_config)}
                 </span>
               </div>
+              {/* Phase 8. Renders nothing for sensors, so no role check here. */}
+              <ActuatorStateBadge device={device} onChanged={() => void refresh(family)} />
               <ZonePicker
                 device={device}
                 groups={groups}

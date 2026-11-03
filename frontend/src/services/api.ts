@@ -36,7 +36,10 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T
 }
 
-/** The API sends { "detail": "..." } on a 400. Show that rather than a generic message. */
+/**
+ * The API sends { "detail": "..." } on a 400, 404 or 409. Show that rather than
+ * a generic message. A 409 from an illegal actuator transition explains why.
+ */
 async function errorDetail(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: string }
@@ -126,6 +129,10 @@ export interface DeviceDto {
   /** Phase 5 sampling columns. */
   sampling_interval_seconds: number
   tracking_enabled: boolean
+  /** Phase 8. Lifecycle state of an actuator; null for sensors. */
+  state: ActuatorStateName | null
+  /** Phase 8. Commands legal in the current state; empty for sensors. */
+  allowed_commands: string[]
 }
 
 export function fetchDevices(
@@ -400,4 +407,31 @@ export function fetchOverview(
   signal?: AbortSignal,
 ): Promise<LocationOverviewDto> {
   return request<LocationOverviewDto>(`/api/locations/${locationId}/overview`, signal)
+}
+
+// ---------------------------------------------------------------------------
+// Actuator state (Phase 8 — State)
+// ---------------------------------------------------------------------------
+
+/** The five lifecycle states. Which moves between them are legal is the backend's call. */
+export type ActuatorStateName = 'off' | 'idle' | 'running' | 'error' | 'maintenance'
+
+/** What GET /api/devices/{id}/state and POST /api/devices/{id}/transition return. */
+export interface ActuatorStateDto {
+  device_id: string
+  state: ActuatorStateName
+  allowed_commands: string[]
+  /** Null if the actuator has never had a stored row. */
+  updated_at: string | null
+}
+
+/**
+ * Ask the backend to move an actuator. The backend decides whether the move is
+ * legal: an illegal one comes back as a 409, and its message says why.
+ */
+export function transitionActuator(
+  deviceId: string,
+  target: ActuatorStateName,
+): Promise<ActuatorStateDto> {
+  return send<ActuatorStateDto>('POST', `/api/devices/${deviceId}/transition`, { target })
 }
