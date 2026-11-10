@@ -4,6 +4,8 @@ Phase 2 added devices. Phase 3 added device_family. Phase 4 added locations and
 zones, plus the two nullable columns on devices that record where a device sits.
 Phase 5 adds sensor_readings and the two sampling columns the sampler reads.
 Phase 6 adds automation_rules: which strategy a location decides with.
+Phase 8 adds actuator_states: the lifecycle state of each actuator.
+Phase 9 adds actuator_execution_log: every attempt to apply a command.
 """
 
 import uuid
@@ -18,6 +20,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     func,
     text,
 )
@@ -185,6 +188,8 @@ class AutomationRuleRow(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
 class ActuatorStateRow(Base):
     """Phase 8. The current lifecycle state of one actuator.
 
@@ -206,4 +211,41 @@ class ActuatorStateRow(Base):
     state: Mapped[str] = mapped_column(String(16), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
-    )    
+    )
+
+
+class ActuatorExecutionLogRow(Base):
+    """Phase 9. One row per attempt to apply a command to an actuator.
+
+    Written by the logging decorator for successes and failures alike, so the
+    dashboard shows what was tried, not only what worked. Rows are inserted and
+    never updated.
+    """
+
+    __tablename__ = "actuator_execution_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    # CASCADE, like sensor_readings: a log row for a deleted device means
+    # nothing, and the test fixtures delete their devices afterwards.
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Names of the policies that took part, e.g. ["maxRunTime", "logging"].
+    policy_applied: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    # Null on success. On failure, why: e.g. "Max run time exceeded".
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # created_at: the dashboard reads "the newest N rows".
+    # device_id: PostgreSQL does not index a foreign key by itself.
+    __table_args__ = (
+        Index("ix_actuator_execution_log_created_at", "created_at"),
+        Index("ix_actuator_execution_log_device_id", "device_id"),
+    )

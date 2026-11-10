@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 
+import ExecutionLog from '../components/actuators/ExecutionLog'
 import LocationConfigWizard from '../components/config/LocationConfigWizard'
 import DeviceList from '../components/devices/DeviceList'
 import OverviewPanel from '../components/overview/OverviewPanel'
@@ -8,7 +9,8 @@ import SensorList from '../features/sensors/SensorList'
 
 /**
  * Sections of the greenhouse dashboard. Each `id` is a contract with the phase that fills it:
- * Phase 2 #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation, Phase 7 #overview.
+ * Phase 2 #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation,
+ * Phase 7 #overview, Phase 9 #controls.
  */
 type Section = {
   id: string
@@ -50,9 +52,9 @@ const sections: Section[] = [
   },
   {
     id: 'controls',
-    title: 'Controls',
-    summary: 'Manual overrides for pumps, vents and lighting.',
-    arriving: 'A later phase',
+    title: 'Controls and execution log',
+    summary: 'Send a command to an actuator and see every attempt, allowed or blocked.',
+    arriving: 'Phase 9 — Decorator',
   },
   {
     id: 'events',
@@ -62,7 +64,7 @@ const sections: Section[] = [
   },
 ]
 
-const WIDE = new Set(['overview', 'configuration', 'sensors', 'devices', 'automation'])
+const WIDE = new Set(['overview', 'configuration', 'sensors', 'devices', 'automation', 'controls'])
 
 export default function DashboardPage() {
   const [configVersion, setConfigVersion] = useState(0)
@@ -72,8 +74,8 @@ export default function DashboardPage() {
       <header className="space-y-1">
         <h1 className="font-display text-3xl font-semibold text-moss-700">Dashboard</h1>
         <p className="max-w-xl text-ink-soft">
-          Overview, locations, sensors, device families and automation are live. The remaining
-          sections are reserved for the phase that builds them.
+          Overview, locations, sensors, device families, automation and actuator controls are
+          live. The remaining sections are reserved for the phase that builds them.
         </p>
       </header>
 
@@ -121,6 +123,8 @@ function SectionCard({
         <DeviceList configVersion={configVersion} />
       ) : section.id === 'automation' ? (
         <StrategyPanel configVersion={configVersion} />
+      ) : section.id === 'controls' ? (
+        <ExecutionLog />
       ) : (
         <>
           <p className="text-sm text-ink-soft">{section.summary}</p>

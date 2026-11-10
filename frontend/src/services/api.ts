@@ -435,3 +435,33 @@ export function transitionActuator(
 ): Promise<ActuatorStateDto> {
   return send<ActuatorStateDto>('POST', `/api/devices/${deviceId}/transition`, { target })
 }
+
+// ---------------------------------------------------------------------------
+// Actuator executions (Phase 9 — Decorator)
+// ---------------------------------------------------------------------------
+
+/** One row of actuator_execution_log. */
+export interface ExecutionDto {
+  id: string
+  device_id: string
+  success: boolean
+  /** ["logging"] on success, ["maxRunTime", "logging"] when blocked. */
+  policy_applied: string[]
+  /** Null on success. */
+  message: string | null
+  created_at: string
+}
+
+/** Newest rows first. */
+export function fetchExecutions(limit = 20, signal?: AbortSignal): Promise<ExecutionDto[]> {
+  return request<ExecutionDto[]>(`/api/actuators/executions?limit=${limit}`, signal)
+}
+
+/** Demo until Phase 10. A blocked command throws a 409, but its row is still saved. */
+export function applyActuatorCommand(
+  deviceId: string,
+  command: string,
+  payload: Record<string, unknown> = {},
+): Promise<ExecutionDto> {
+  return send<ExecutionDto>('POST', `/api/actuators/${deviceId}/apply`, { command, payload })
+}
