@@ -1,15 +1,15 @@
-"""HTTP routes for actuator commands and the execution log."""
+"""HTTP route for the actuator execution log.
+
+Commands are sent through POST /api/commands (Phase 10), never from here.
+"""
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from src.application.actuators.dto import ApplyRequestDto, ExecutionDto
+from src.application.actuators.dto import ExecutionDto
 from src.application.actuators.execution_service import ActuatorExecutionService
-from src.application.devices.state_service import ActuatorNotFoundError
-from src.domain.actuators.policies import ActuatorPolicyError
-from src.domain.sensors.errors import AdapterError
 from src.infrastructure.db import get_db
 from src.infrastructure.persistence.actuator_state_repository import ActuatorStateRepository
 from src.infrastructure.persistence.device_repository import DeviceRepository
@@ -41,33 +41,3 @@ def list_executions(
     service: ActuatorExecutionService = Depends(get_execution_service),
 ) -> list[ExecutionDto]:
     return service.recent(limit, device_id)
-
-
-@router.post(
-    "/{device_id}/apply",
-    response_model=ExecutionDto,
-    summary="Apply a command through the decorated port (demo)",
-    description=(
-        "Goes through logging, then max run time, then the adapter. The command is "
-        "not checked in this phase. Blocked once the actuator has been running for "
-        "30 minutes. Every call writes a log row. Replaced by Command in Phase 10."
-    ),
-    responses={
-        400: {"description": "No adapter can drive this device."},
-        404: {"description": "No actuator with that id (sensors count as missing)."},
-        409: {"description": "A policy blocked the command. The row is still written."},
-    },
-)
-def apply_command(
-    device_id: UUID,
-    payload: ApplyRequestDto,
-    service: ActuatorExecutionService = Depends(get_execution_service),
-) -> ExecutionDto:
-    try:
-        return service.apply(device_id, payload.command, payload.payload)
-    except ActuatorNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except ActuatorPolicyError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
-    except AdapterError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

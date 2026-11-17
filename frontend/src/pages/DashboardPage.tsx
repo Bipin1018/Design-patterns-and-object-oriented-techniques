@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
 import ExecutionLog from '../components/actuators/ExecutionLog'
+import CommandPanel from '../components/commands/CommandPanel'
 import LocationConfigWizard from '../components/config/LocationConfigWizard'
 import DeviceList from '../components/devices/DeviceList'
 import OverviewPanel from '../components/overview/OverviewPanel'
@@ -10,7 +11,7 @@ import SensorList from '../features/sensors/SensorList'
 /**
  * Sections of the greenhouse dashboard. Each `id` is a contract with the phase that fills it:
  * Phase 2 #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation,
- * Phase 7 #overview, Phase 9 #controls.
+ * Phase 7 #overview, Phase 9 and 10 #controls.
  */
 type Section = {
   id: string
@@ -52,9 +53,9 @@ const sections: Section[] = [
   },
   {
     id: 'controls',
-    title: 'Controls and execution log',
-    summary: 'Send a command to an actuator and see every attempt, allowed or blocked.',
-    arriving: 'Phase 9 — Decorator',
+    title: 'Controls',
+    summary: 'Send commands to actuators, with the command history and the execution log.',
+    arriving: 'Phase 10 — Command',
   },
   {
     id: 'events',
@@ -124,7 +125,10 @@ function SectionCard({
       ) : section.id === 'automation' ? (
         <StrategyPanel configVersion={configVersion} />
       ) : section.id === 'controls' ? (
-        <ExecutionLog />
+        <>
+          <CommandPanel onChange={onConfigChange} />
+          <ExecutionLog refreshKey={configVersion} />
+        </>
       ) : (
         <>
           <p className="text-sm text-ink-soft">{section.summary}</p>

@@ -92,7 +92,10 @@ def test_pump_commands_follow_the_state() -> None:
 
 def test_light_commands_use_light_names() -> None:
     assert ActuatorContext("grow_light", "idle").allowed_commands()[0] == "turn_on_light"
-    assert ActuatorContext("grow_light", "running").allowed_commands() == ["turn_off_light"]
+    assert ActuatorContext("grow_light", "running").allowed_commands() == [
+        "turn_off_light",
+        "set_light_level",
+    ]
 
 
 def test_error_offers_reset_and_off_offers_power_on() -> None:
@@ -118,3 +121,17 @@ def test_target_for_maps_a_command_to_its_state() -> None:
 def test_target_for_rejects_a_command_not_allowed_now() -> None:
     with pytest.raises(CommandNotAllowedError):
         ActuatorContext("water_pump", "running").target_for("start_pump")
+
+
+def test_light_level_is_allowed_while_idle_or_running() -> None:
+    assert "set_light_level" in ActuatorContext("grow_light", "idle").allowed_commands()
+    assert ActuatorContext("grow_light", "idle").target_for("set_light_level") == "running"
+    # Already running: the target is the same state, so Phase 10 does not transition.
+    assert ActuatorContext("grow_light", "running").target_for("set_light_level") == "running"
+
+
+def test_light_level_is_not_for_pumps_or_lights_that_are_off() -> None:
+    assert "set_light_level" not in ActuatorContext("water_pump", "running").allowed_commands()
+    assert "set_light_level" not in ActuatorContext("grow_light", "off").allowed_commands()
+    with pytest.raises(CommandNotAllowedError):
+        ActuatorContext("grow_light", "maintenance").target_for("set_light_level")

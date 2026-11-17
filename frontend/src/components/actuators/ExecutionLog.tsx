@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import {
-  applyActuatorCommand,
   fetchDevices,
   fetchExecutions,
   type DeviceDto,
@@ -9,7 +8,6 @@ import {
 } from '../../services/api'
 
 type Status = 'loading' | 'ready' | 'error'
-type Notice = { text: string; ok: boolean }
 
 const LIMIT = 20
 
@@ -30,15 +28,15 @@ function ResultBadge({ success }: { success: boolean }) {
   )
 }
 
-export default function ExecutionLog() {
+/**
+ * Phase 9 execution log, read only. Commands are sent from CommandPanel (Phase 10).
+ * refreshKey goes up after every command, so the table reloads with the new row.
+ */
+export default function ExecutionLog({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rows, setRows] = useState<ExecutionDto[]>([])
   const [actuators, setActuators] = useState<DeviceDto[]>([])
   const [status, setStatus] = useState<Status>('loading')
   const [error, setError] = useState<string | null>(null)
-  const [deviceId, setDeviceId] = useState('')
-  const [command, setCommand] = useState('start_pump')
-  const [pending, setPending] = useState(false)
-  const [notice, setNotice] = useState<Notice | null>(null)
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -48,10 +46,6 @@ export default function ExecutionLog() {
       ])
       setRows(executions)
       setActuators(devices)
-      // Default to the first actuator the simulation adapter can drive.
-      setDeviceId(
-        (current) => current || devices.find((d) => d.device_family === 'simulation')?.id || '',
-      )
       setStatus('ready')
       setError(null)
     } catch (caught) {
@@ -65,94 +59,30 @@ export default function ExecutionLog() {
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
-  }, [load])
-
-  async function apply(event: FormEvent) {
-    event.preventDefault()
-    if (!deviceId || !command.trim()) return
-
-    setPending(true)
-    setNotice(null)
-    try {
-      await applyActuatorCommand(deviceId, command.trim())
-      setNotice({ text: 'Applied. A success row was added.', ok: true })
-    } catch (caught) {
-      // 409 means a policy blocked it. The row is already in the log.
-      setNotice({ text: errorText(caught, 'Could not apply the command.'), ok: false })
-    } finally {
-      setPending(false)
-      await load()
-    }
-  }
+  }, [load, refreshKey])
 
   const names = new Map(actuators.map((device) => [device.id, nameOf(device)]))
-  const drivable = actuators.filter((device) => device.device_family === 'simulation')
 
   return (
-    <div className="space-y-4">
-      <p className="max-w-3xl text-sm text-ink-soft">
-        Commands go through the decorated actuator port: logging, then max run time, then the
-        adapter. The command name is not checked yet, so any command succeeds until the actuator
-        has been <strong>running</strong> for 30 minutes. A success row has an empty message and
-        policy <code className="font-mono">logging</code>. A blocked row shows{' '}
-        <em>Max run time exceeded</em> with policies{' '}
-        <code className="font-mono">maxRunTime</code> and{' '}
-        <code className="font-mono">logging</code>.
-      </p>
-
-      <form onSubmit={(event) => void apply(event)} className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-ink-soft">
-          Actuator
-          <select
-            value={deviceId}
-            onChange={(event) => setDeviceId(event.target.value)}
-            disabled={pending || drivable.length === 0}
-            className="rounded-md border border-line bg-white px-2 py-1 text-sm text-ink"
-          >
-            {drivable.length === 0 && <option value="">No simulation actuators</option>}
-            {drivable.map((device) => (
-              <option key={device.id} value={device.id}>
-                {nameOf(device)} ({device.state ?? 'unknown'})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1 text-xs text-ink-soft">
-          Command
-          <input
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            disabled={pending}
-            className="rounded-md border border-line bg-white px-2 py-1 font-mono text-sm text-ink"
-          />
-        </label>
-
-        <button
-          type="submit"
-          disabled={pending || !deviceId || !command.trim()}
-          className="rounded-md bg-moss-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
-          {pending ? 'Applying…' : 'Apply'}
-        </button>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-display text-base font-semibold">Execution log</h3>
         <button
           type="button"
           onClick={() => void load()}
-          disabled={pending}
-          className="rounded-md border border-line px-3 py-1.5 text-sm text-ink-soft disabled:opacity-50"
+          className="rounded-md border border-line px-3 py-1.5 text-sm text-ink-soft"
         >
           Refresh
         </button>
-      </form>
+      </div>
+      <p className="max-w-3xl text-sm text-ink-soft">
+        Every command that reached the decorated actuator port: logging, then max run time, then
+        the adapter. A blocked row shows <em>Max run time exceeded</em> with policies{' '}
+        <code className="font-mono">maxRunTime</code> and{' '}
+        <code className="font-mono">logging</code>. Rejected commands never reach the port, so
+        they appear only in the command history above.
+      </p>
 
-      {notice && (
-        <p
-          role={notice.ok ? 'status' : 'alert'}
-          className={`text-sm ${notice.ok ? 'text-moss-700' : 'text-clay-500'}`}
-        >
-          {notice.text}
-        </p>
-      )}
       {error && (
         <p role="alert" className="text-sm text-clay-500">
           {error}
@@ -163,7 +93,7 @@ export default function ExecutionLog() {
         <p className="text-sm text-ink-soft">Loading execution log…</p>
       ) : rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-line p-4 text-sm text-ink-soft">
-          No executions yet. Apply a command above to add the first row.
+          No executions yet. Send a command above to add the first row.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-line">

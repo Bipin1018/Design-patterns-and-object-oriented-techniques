@@ -1,4 +1,9 @@
-"""API tests for the execution log. These need the stack up."""
+"""API tests for the execution log. These need the stack up.
+
+Since Phase 10 every command reaches the decorated port through
+POST /api/commands, so these tests send commands that way. What they check
+is still the Phase 9 part: the row the logging decorator writes.
+"""
 
 from collections.abc import Iterator
 from datetime import timedelta
@@ -23,8 +28,9 @@ client = TestClient(app)
 MISSING = "00000000-0000-0000-0000-000000000000"
 
 
-def apply(device_id: str, command: str) -> Response:
-    return client.post(f"/api/actuators/{device_id}/apply", json={"command": command})
+def command(device_id: str, command_type: str, payload: dict | None = None) -> Response:
+    body = {"command_type": command_type, "device_id": device_id, "payload": payload or {}}
+    return client.post("/api/commands", json=body)
 
 
 def log_rows(device_id: str) -> list[tuple[bool, list[str], str | None]]:
@@ -39,10 +45,8 @@ def log_rows(device_id: str) -> list[tuple[bool, list[str], str | None]]:
     return [(success, policies, message) for success, policies, message in rows]
 
 
-def running_for(device_id: str, minutes: int) -> None:
-    """Make the actuator look like it started running `minutes` ago."""
-    response = client.post(f"/api/devices/{device_id}/transition", json={"target": "running"})
-    assert response.status_code == 200
+def started_minutes_ago(device_id: str, minutes: int) -> None:
+    """Make a running actuator look like it started `minutes` ago."""
     with SessionLocal() as session:
         session.execute(
             update(ActuatorStateRow)
@@ -50,6 +54,13 @@ def running_for(device_id: str, minutes: int) -> None:
             .values(updated_at=func.now() - timedelta(minutes=minutes))
         )
         session.commit()
+
+
+def running_for(device_id: str, minutes: int) -> None:
+    """Put an idle actuator in running, `minutes` ago, without writing a log row."""
+    response = client.post(f"/api/devices/{device_id}/transition", json={"target": "running"})
+    assert response.status_code == 200
+    started_minutes_ago(device_id, minutes)
 
 
 @pytest.fixture
@@ -67,28 +78,26 @@ def kit() -> Iterator[dict[str, dict]]:
         session.commit()
 
 
-def test_apply_writes_a_success_row(kit: dict[str, dict]) -> None:
+def test_command_writes_a_success_row(kit: dict[str, dict]) -> None:
     pump = kit["water_pump"]["id"]
 
-    response = apply(pump, "not_a_real_command")
+    response = command(pump, "start_pump")
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert body["policy_applied"] == ["logging"]
-    assert body["message"] is None
+    assert response.json()["status"] == "success"
     assert log_rows(pump) == [(True, ["logging"], None)]
 
 
-def test_blocked_apply_is_409_and_still_logged(kit: dict[str, dict]) -> None:
+def test_blocked_command_is_failed_and_still_logged(kit: dict[str, dict]) -> None:
     pump = kit["water_pump"]["id"]
     running_for(pump, 31)
     calls_before = len(_SIMULATION.applied)
 
-    response = apply(pump, "stop_pump")
+    response = command(pump, "stop_pump")
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Max run time exceeded"
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    assert response.json()["error_message"] == "Max run time exceeded"
     assert len(_SIMULATION.applied) == calls_before  # the real adapter was never reached
     assert log_rows(pump) == [(False, ["maxRunTime", "logging"], "Max run time exceeded")]
 
@@ -97,15 +106,15 @@ def test_running_under_30_minutes_is_allowed(kit: dict[str, dict]) -> None:
     pump = kit["water_pump"]["id"]
     running_for(pump, 5)
 
-    assert apply(pump, "stop_pump").status_code == 200
+    assert command(pump, "stop_pump").json()["status"] == "success"
     assert log_rows(pump) == [(True, ["logging"], None)]
 
 
 def test_executions_endpoint_lists_newest_first(kit: dict[str, dict]) -> None:
     pump = kit["water_pump"]["id"]
-    assert apply(pump, "first").status_code == 200
-    running_for(pump, 31)
-    assert apply(pump, "second").status_code == 409
+    assert command(pump, "start_pump").json()["status"] == "success"
+    started_minutes_ago(pump, 31)
+    assert command(pump, "stop_pump").json()["status"] == "failed"
 
     response = client.get(f"/api/actuators/executions?limit=20&device_id={pump}")
 
@@ -118,7 +127,7 @@ def test_executions_endpoint_lists_newest_first(kit: dict[str, dict]) -> None:
 def test_executions_limit(kit: dict[str, dict]) -> None:
     light = kit["grow_light"]["id"]
     for _ in range(3):
-        assert apply(light, "turn_on_light").status_code == 200
+        assert command(light, "set_light_level").status_code == 200
 
     response = client.get(f"/api/actuators/executions?limit=2&device_id={light}")
 
@@ -129,6 +138,15 @@ def test_executions_limit(kit: dict[str, dict]) -> None:
 def test_missing_actuator_or_sensor_is_404_and_writes_nothing(kit: dict[str, dict]) -> None:
     sensor = kit["moisture_sensor"]["id"]
 
-    assert apply(MISSING, "start_pump").status_code == 404
-    assert apply(sensor, "start_pump").status_code == 404
+    assert command(MISSING, "start_pump").status_code == 404
+    assert command(sensor, "start_pump").status_code == 404
     assert log_rows(sensor) == []
+
+
+def test_the_phase_9_demo_route_is_gone(kit: dict[str, dict]) -> None:
+    pump = kit["water_pump"]["id"]
+
+    response = client.post(f"/api/actuators/{pump}/apply", json={"command": "start_pump"})
+
+    assert response.status_code in (404, 405)
+    assert log_rows(pump) == []

@@ -6,6 +6,7 @@ Phase 5 adds sensor_readings and the two sampling columns the sampler reads.
 Phase 6 adds automation_rules: which strategy a location decides with.
 Phase 8 adds actuator_states: the lifecycle state of each actuator.
 Phase 9 adds actuator_execution_log: every attempt to apply a command.
+Phase 10 adds command_log: every command sent, with success, failed or rejected.
 """
 
 import uuid
@@ -14,6 +15,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -248,4 +250,47 @@ class ActuatorExecutionLogRow(Base):
     __table_args__ = (
         Index("ix_actuator_execution_log_created_at", "created_at"),
         Index("ix_actuator_execution_log_device_id", "device_id"),
+    )
+
+
+class CommandLogRow(Base):
+    """Phase 10. One row per command sent to an actuator.
+
+    Written by CommandService for success, failed and rejected alike, so the
+    history also shows commands the state guard refused. An unknown command
+    type or a missing device writes no row. Rows are inserted and never updated.
+    """
+
+    __tablename__ = "command_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    # e.g. "start_pump", "stop_pump", "set_light_level".
+    command_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # CASCADE, like the execution log: a row for a deleted device means nothing.
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    # What was sent with the command, e.g. {"level": 1}. Empty object if nothing.
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    # success | failed | rejected. The CHECK below makes PostgreSQL refuse anything else.
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Null on success. Why it was rejected, or why it failed
+    # (e.g. "Max run time exceeded").
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # created_at: the history reads "the newest N rows".
+    # device_id: PostgreSQL does not index a foreign key by itself.
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('success', 'failed', 'rejected')", name="ck_command_log_status"
+        ),
+        Index("ix_command_log_created_at", "created_at"),
+        Index("ix_command_log_device_id", "device_id"),
     )

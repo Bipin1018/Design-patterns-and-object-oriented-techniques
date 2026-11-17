@@ -1,6 +1,8 @@
-"""Builds the decorated actuator port and reads the execution log."""
+"""Builds the decorated actuator port and reads the execution log.
 
-from typing import Any
+Phase 10's CommandService is the only caller of port_for.
+"""
+
 from uuid import UUID
 
 from src.application.actuators.dto import ExecutionDto
@@ -41,14 +43,6 @@ class ActuatorExecutionService:
             MaxRunTimeActuatorDecorator(inner, self._states),
             self._log,
         )
-
-    def apply(self, device_id: UUID, command: str, payload: dict[str, Any]) -> ExecutionDto:
-        """Run one command through the chain and return the row it wrote."""
-        self.port_for(device_id).apply(device_id, command, payload)
-        return self.latest(device_id)
-
-    def latest(self, device_id: UUID) -> ExecutionDto:
-        return _to_dto(self._log.recent(1, device_id)[0])
 
     def recent(self, limit: int, device_id: UUID | None = None) -> list[ExecutionDto]:
         return [_to_dto(row) for row in self._log.recent(limit, device_id)]

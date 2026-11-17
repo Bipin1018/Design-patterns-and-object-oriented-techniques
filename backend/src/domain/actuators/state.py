@@ -50,6 +50,17 @@ _RUN_COMMANDS: dict[str, tuple[str, str]] = {
 }
 _GENERIC_RUN_COMMANDS: tuple[str, str] = ("start", "stop")
 
+# Phase 10. Commands that change a setting rather than the lifecycle. They are
+# not edges of TRANSITIONS. For each state the command is allowed in, the value
+# is the state it leaves the actuator in. From idle, a light level also switches
+# the light on (the normal idle -> running edge). From running it only changes
+# the level, so the state stays running and nothing is transitioned.
+_SETTING_COMMANDS: dict[str, dict[str, dict[str, str]]] = {
+    "grow_light": {
+        "set_light_level": {IDLE: RUNNING, RUNNING: RUNNING},
+    },
+}
+
 
 class ActuatorStateError(ValueError):
     """Base for every actuator state problem."""
@@ -94,3 +105,12 @@ def commands_for(device_type: str) -> dict[tuple[str, str], str]:
     """Command name for each edge a person can ask for, for this kind of actuator."""
     start, stop = _RUN_COMMANDS.get(device_type, _GENERIC_RUN_COMMANDS)
     return {**_EDGE_COMMANDS, (IDLE, RUNNING): start, (RUNNING, IDLE): stop}
+
+
+def setting_commands_for(device_type: str, state: str) -> dict[str, str]:
+    """Setting commands allowed in this state, mapped to the state each leaves behind."""
+    return {
+        command: targets[state]
+        for command, targets in _SETTING_COMMANDS.get(device_type, {}).items()
+        if state in targets
+    }

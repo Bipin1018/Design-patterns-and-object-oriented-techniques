@@ -6,6 +6,7 @@ from src.domain.actuators.state import (
     CommandNotAllowedError,
     IllegalTransitionError,
     commands_for,
+    setting_commands_for,
     targets_from,
     validate_state,
 )
@@ -42,17 +43,22 @@ class ActuatorContext:
 
     def allowed_commands(self) -> list[str]:
         """Command names legal right now. What the API sends as allowed_commands."""
-        return [
+        moves = [
             self._commands[(self._state, target)]
             for target in self.allowed_targets()
             if (self._state, target) in self._commands
         ]
+        # Phase 10: setting commands (e.g. set_light_level) come after the moves.
+        return moves + list(setting_commands_for(self._device_type, self._state))
 
     def target_for(self, command: str) -> str:
-        """Which state a command leads to from here. Phase 10's Command will use this."""
+        """Which state a command leads to from here. May be the current state (set_light_level)."""
         for target in self.allowed_targets():
             if self._commands.get((self._state, target)) == command:
                 return target
+        settings = setting_commands_for(self._device_type, self._state)
+        if command in settings:
+            return settings[command]
         allowed = ", ".join(self.allowed_commands()) or "none"
         raise CommandNotAllowedError(
             f"{command!r} is not allowed while {self._state}. Allowed now: {allowed}."

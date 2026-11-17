@@ -457,11 +457,51 @@ export function fetchExecutions(limit = 20, signal?: AbortSignal): Promise<Execu
   return request<ExecutionDto[]>(`/api/actuators/executions?limit=${limit}`, signal)
 }
 
-/** Demo until Phase 10. A blocked command throws a 409, but its row is still saved. */
-export function applyActuatorCommand(
+// ---------------------------------------------------------------------------
+// Commands (Phase 10 — Command)
+// ---------------------------------------------------------------------------
+
+/** The commands the controls can send. Which are allowed right now is the backend's call. */
+export type CommandType = 'start_pump' | 'stop_pump' | 'set_light_level'
+
+export type CommandStatus = 'success' | 'failed' | 'rejected'
+
+/** One row of command_log. */
+export interface CommandLogDto {
+  id: string
+  command_type: string
+  device_id: string
+  payload: Record<string, unknown>
+  status: CommandStatus
+  /** Null on success. Why it was rejected or why it failed. */
+  error_message: string | null
+  created_at: string
+}
+
+/** Newest rows first. */
+export function fetchCommands(limit = 50, signal?: AbortSignal): Promise<CommandLogDto[]> {
+  return request<CommandLogDto[]>(`/api/commands?limit=${limit}`, signal)
+}
+
+/**
+ * Send one command. Resolves with its log row for success, failed and rejected.
+ * A rejected command comes back as 409 with the same row, so it is not thrown.
+ * 400 (unknown command, bad payload) and 404 (not an actuator) still throw.
+ */
+export async function runCommand(
+  commandType: CommandType,
   deviceId: string,
-  command: string,
   payload: Record<string, unknown> = {},
-): Promise<ExecutionDto> {
-  return send<ExecutionDto>('POST', `/api/actuators/${deviceId}/apply`, { command, payload })
+): Promise<CommandLogDto> {
+  const response = await fetch(`${API_BASE_URL}/api/commands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ command_type: commandType, device_id: deviceId, payload }),
+  })
+
+  if (response.ok || response.status === 409) {
+    return (await response.json()) as CommandLogDto
+  }
+  const detail = await errorDetail(response, `Command failed with status ${response.status}`)
+  throw new ApiError(detail, response.status)
 }
