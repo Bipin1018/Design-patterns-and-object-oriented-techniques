@@ -13,6 +13,7 @@ from src.infrastructure.db import SessionLocal
 from src.infrastructure.persistence.models import (
     ActuatorExecutionLogRow,
     ActuatorStateRow,
+    AlertRow,
     CommandLogRow,
     DeviceRow,
 )
@@ -78,6 +79,8 @@ def kit() -> Iterator[dict[str, dict]]:
     yield {device["device_type"]: device for device in devices}
 
     with SessionLocal() as session:
+        # Alerts are SET NULL, not CASCADE, so delete them first.
+        session.execute(delete(AlertRow).where(AlertRow.device_id.in_(ids)))
         session.execute(delete(DeviceRow).where(DeviceRow.id.in_(ids)))
         session.commit()
 

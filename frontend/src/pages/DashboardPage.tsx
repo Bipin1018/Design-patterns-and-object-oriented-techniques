@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
 import ExecutionLog from '../components/actuators/ExecutionLog'
+import EventFeed from '../components/alerts/EventFeed'
 import CommandPanel from '../components/commands/CommandPanel'
 import LocationConfigWizard from '../components/config/LocationConfigWizard'
 import DeviceList from '../components/devices/DeviceList'
@@ -11,7 +12,7 @@ import SensorList from '../features/sensors/SensorList'
 /**
  * Sections of the greenhouse dashboard. Each `id` is a contract with the phase that fills it:
  * Phase 2 #sensors, Phase 3 #devices, Phase 4 #configuration, Phase 6 #automation,
- * Phase 7 #overview, Phase 9 and 10 #controls.
+ * Phase 7 #overview, Phase 9 and 10 #controls, Phase 11 #events.
  */
 type Section = {
   id: string
@@ -60,12 +61,20 @@ const sections: Section[] = [
   {
     id: 'events',
     title: 'Events',
-    summary: 'A running log of what the greenhouse did, and what triggered it.',
-    arriving: 'A later phase',
+    summary: 'Alerts raised by the event bus, newest first. Polled every 5 seconds.',
+    arriving: 'Phase 11 — Observer',
   },
 ]
 
-const WIDE = new Set(['overview', 'configuration', 'sensors', 'devices', 'automation', 'controls'])
+const WIDE = new Set([
+  'overview',
+  'configuration',
+  'sensors',
+  'devices',
+  'automation',
+  'controls',
+  'events',
+])
 
 export default function DashboardPage() {
   const [configVersion, setConfigVersion] = useState(0)
@@ -75,8 +84,8 @@ export default function DashboardPage() {
       <header className="space-y-1">
         <h1 className="font-display text-3xl font-semibold text-moss-700">Dashboard</h1>
         <p className="max-w-xl text-ink-soft">
-          Overview, locations, sensors, device families, automation and actuator controls are
-          live. The remaining sections are reserved for the phase that builds them.
+          Overview, locations, sensors, device families, automation, actuator controls and the
+          event feed are live.
         </p>
       </header>
 
@@ -129,6 +138,8 @@ function SectionCard({
           <CommandPanel onChange={onConfigChange} />
           <ExecutionLog refreshKey={configVersion} />
         </>
+      ) : section.id === 'events' ? (
+        <EventFeed />
       ) : (
         <>
           <p className="text-sm text-ink-soft">{section.summary}</p>

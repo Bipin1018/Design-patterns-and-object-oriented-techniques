@@ -7,6 +7,8 @@ Phase 6 adds automation_rules: which strategy a location decides with.
 Phase 8 adds actuator_states: the lifecycle state of each actuator.
 Phase 9 adds actuator_execution_log: every attempt to apply a command.
 Phase 10 adds command_log: every command sent, with success, failed or rejected.
+Phase 10 adds command_log: every command sent, with success, failed or rejected.
+Phase 11 adds alerts: what the alert subscriber stored after a domain event.
 """
 
 import uuid
@@ -293,4 +295,57 @@ class CommandLogRow(Base):
         ),
         Index("ix_command_log_created_at", "created_at"),
         Index("ix_command_log_device_id", "device_id"),
+    )
+class AlertRow(Base):
+    """Phase 11. One alert, written only by AlertPersistenceSubscriber.
+
+    The three foreign keys are nullable and SET NULL, unlike the log tables
+    above. An alert is history: deleting the pump or the zone it was about must
+    not delete the record that something went wrong there. A device that was
+    never placed in a zone stores null location_id and zone_id.
+    """
+
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
+    )
+    zone_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("zones.id", ondelete="SET NULL"), nullable=True
+    )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True
+    )
+    # info | warning | critical
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    # The event that caused it: threshold.crossed, command.failed, state.changed.
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    # active | resolved. Phase 13 adds PATCH to resolve one.
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'active'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Stored, not in the API response yet.
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # created_at: the feed reads "the newest N rows".
+    # The three FKs: the filters use two of them, and PostgreSQL does not index
+    # a foreign key by itself, so SET NULL on a delete would scan the table.
+    __table_args__ = (
+        CheckConstraint(
+            "severity IN ('info', 'warning', 'critical')", name="ck_alerts_severity"
+        ),
+        CheckConstraint("status IN ('active', 'resolved')", name="ck_alerts_status"),
+        Index("ix_alerts_created_at", "created_at"),
+        Index("ix_alerts_location_id", "location_id"),
+        Index("ix_alerts_zone_id", "zone_id"),
+        Index("ix_alerts_device_id", "device_id"),
     )

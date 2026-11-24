@@ -18,14 +18,15 @@ from src.infrastructure.persistence.device_repository import DeviceRepository
 from src.infrastructure.persistence.reading_repository import ReadingRepository
 from src.infrastructure.settings import get_settings
 from src.interfaces.api.actuators import router as actuators_router
+from src.interfaces.api.alerts import router as alerts_router
 from src.interfaces.api.automation import router as automation_router
 from src.interfaces.api.commands import router as commands_router
 from src.interfaces.api.devices import router as devices_router
+from src.interfaces.api.event_bus import event_bus
 from src.interfaces.api.health import router as health_router
 from src.interfaces.api.locations import router as locations_router
 from src.interfaces.api.overview import router as overview_router
 from src.interfaces.api.sensors import router as sensors_router
-
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,9 @@ def _tick() -> int:
     try:
         devices = DeviceRepository(session)
         readings = ReadingRepository(session)
-        sampler = SimulationSampler(devices, readings, ReadingIngest(devices, readings))
+        # Same bus as the routes, so sampled readings reach the same subscribers.
+        ingest = ReadingIngest(devices, readings, event_bus)
+        sampler = SimulationSampler(devices, readings, ingest)
         return sampler.run_once(datetime.now(UTC))
     finally:
         session.close()
@@ -118,6 +121,7 @@ app.include_router(automation_router)
 app.include_router(overview_router)
 app.include_router(actuators_router)
 app.include_router(commands_router)
+app.include_router(alerts_router)
 
 
 @app.get("/", tags=["system"], summary="API discovery")

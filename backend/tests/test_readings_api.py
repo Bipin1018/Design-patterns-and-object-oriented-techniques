@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from src.application.readings.sampler import SimulationSampler
 from src.application.readings.service import ReadingIngest
+from src.domain.events.bus import EventBus
 from src.infrastructure.db import SessionLocal
 from src.infrastructure.persistence.device_repository import DeviceRepository
 from src.infrastructure.persistence.models import DeviceRow
@@ -189,7 +190,8 @@ def test_sampler_respects_interval_and_tracking(kit: list[dict]) -> None:
     try:
         devices = DeviceRepository(session)
         readings = ReadingRepository(session)
-        sampler = SimulationSampler(devices, readings, ReadingIngest(devices, readings))
+        # An empty bus: these tests are about when the sampler runs, not events.
+        sampler = SimulationSampler(devices, readings, ReadingIngest(devices, readings, EventBus()))
         now = datetime.now(UTC)
 
         def count() -> int:
@@ -227,7 +229,8 @@ def test_sampler_skips_mqtt_devices(edge_kit: list[dict]) -> None:
     try:
         devices = DeviceRepository(session)
         readings = ReadingRepository(session)
-        sampler = SimulationSampler(devices, readings, ReadingIngest(devices, readings))
+        # An empty bus: these tests are about when the sampler runs, not events.
+        sampler = SimulationSampler(devices, readings, ReadingIngest(devices, readings, EventBus()))
 
         sampler.run_once(datetime.now(UTC) + timedelta(hours=1))
 

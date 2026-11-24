@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 from src.application.readings.dto import ReadingDto
 from src.application.readings.service import DeviceNotFoundError, ReadingIngest
 from src.application.sensors.service import SensorService
+from src.domain.events.bus import EventBus
 from src.domain.sensors.creators import available_sensor_types
 from src.domain.sensors.entity import Sensor
 from src.infrastructure.db import get_db
 from src.infrastructure.persistence.device_repository import DeviceRepository
 from src.infrastructure.persistence.reading_repository import ReadingRepository
+from src.interfaces.api.event_bus import get_event_bus
 
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
@@ -45,9 +47,12 @@ def get_service(session: Session = Depends(get_db)) -> SensorService:
     return SensorService(DeviceRepository(session))
 
 
-def get_ingest(session: Session = Depends(get_db)) -> ReadingIngest:
-    """The one writer of sensor_readings, wired to this request's session."""
-    return ReadingIngest(DeviceRepository(session), ReadingRepository(session))
+def get_ingest(
+    session: Session = Depends(get_db),
+    bus: EventBus = Depends(get_event_bus),
+) -> ReadingIngest:
+    """The one writer of sensor_readings, wired to this request's session and the shared bus."""
+    return ReadingIngest(DeviceRepository(session), ReadingRepository(session), bus)
 
 
 def _to_response(sensor: Sensor) -> SensorResponse:

@@ -2,6 +2,9 @@
 
 Every attempt that passes the device and name checks gets one command_log row:
 success, failed or rejected.
+
+Phase 11: a failed command also publishes CommandFailed. A successful one
+doesn't need its own event: its state change already publishes one.
 """
 
 from typing import Any
@@ -15,6 +18,8 @@ from src.domain.actuators.policies import ActuatorPolicyError
 from src.domain.actuators.state import INITIAL_STATE
 from src.domain.commands.base import FAILED, REJECTED, SUCCESS, Command
 from src.domain.commands.invoker import CommandInvoker, command_for
+from src.domain.events.bus import EventBus
+from src.domain.events.events import CommandFailed
 from src.domain.sensors.errors import AdapterError
 from src.infrastructure.persistence.actuator_state_repository import ActuatorStateRepository
 from src.infrastructure.persistence.command_log_repository import (
@@ -30,12 +35,14 @@ class CommandService:
         state_service: ActuatorStateService,
         executions: ActuatorExecutionService,
         log: CommandLogRepository,
+        bus: EventBus,
         invoker: CommandInvoker | None = None,
     ) -> None:
         self._states = states
         self._state_service = state_service
         self._executions = executions
         self._log = log
+        self._bus = bus
         self._invoker = invoker or CommandInvoker()
 
     def submit(self, command_type: str, device_id: UUID, payload: dict[str, Any]) -> CommandLogDto:
@@ -64,9 +71,9 @@ class CommandService:
         try:
             self._invoker.run(command, self._executions.port_for(device_id))
         except ActuatorPolicyError as exc:  # e.g. "Max run time exceeded"
-            return self._write(command, FAILED, exc.message)
+            return self._fail(command, exc.message)
         except AdapterError as exc:  # no adapter can drive this device
-            return self._write(command, FAILED, str(exc))
+            return self._fail(command, str(exc))
 
         # 5. Move the state only when the target differs. set_light_level on a
         #    running light stays running, so nothing is transitioned.
@@ -78,6 +85,21 @@ class CommandService:
     def recent(self, limit: int) -> list[CommandLogDto]:
         """Newest first."""
         return [_to_dto(row) for row in self._log.recent(limit)]
+
+    def _fail(self, command: Command, message: str) -> CommandLogDto:
+        """Save the failed row, then publish CommandFailed."""
+        row = self._write(command, FAILED, message)
+        location_id, zone_id = self._states.placement(command.device_id)
+        self._bus.publish(
+            CommandFailed(
+                device_id=command.device_id,
+                location_id=location_id,
+                zone_id=zone_id,
+                command_type=command.command_type,
+                message=message,
+            )
+        )
+        return row
 
     def _write(self, command: Command, status: str, error_message: str | None) -> CommandLogDto:
         stored = self._log.add(

@@ -17,10 +17,12 @@ from src.application.readings.dto import UpdateSamplingRequestDto
 from src.domain.actuators.state import ACTUATOR_STATES, IllegalTransitionError, UnknownStateError
 from src.domain.devices.family_factory import available_families
 from src.domain.devices.sampling import MIN_SAMPLING_INTERVAL_SECONDS
+from src.domain.events.bus import EventBus
 from src.infrastructure.db import get_db
 from src.infrastructure.persistence.actuator_state_repository import ActuatorStateRepository
 from src.infrastructure.persistence.device_repository import DeviceRepository
 from src.infrastructure.persistence.location_repository import LocationRepository
+from src.interfaces.api.event_bus import get_event_bus
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
@@ -37,8 +39,11 @@ def get_sampling_service(session: Session = Depends(get_db)) -> SamplingService:
     return SamplingService(DeviceRepository(session))
 
 
-def get_state_service(session: Session = Depends(get_db)) -> ActuatorStateService:
-    return ActuatorStateService(ActuatorStateRepository(session))
+def get_state_service(
+    session: Session = Depends(get_db),
+    bus: EventBus = Depends(get_event_bus),
+) -> ActuatorStateService:
+    return ActuatorStateService(ActuatorStateRepository(session), bus)
 
 
 class AssignZoneRequest(BaseModel):

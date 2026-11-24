@@ -12,25 +12,31 @@ from src.application.commands.dto import CommandLogDto, CommandRequestDto
 from src.application.commands.service import CommandService
 from src.application.devices.state_service import ActuatorNotFoundError, ActuatorStateService
 from src.domain.commands.base import REJECTED
+from src.domain.events.bus import EventBus
 from src.infrastructure.db import get_db
 from src.infrastructure.persistence.actuator_state_repository import ActuatorStateRepository
 from src.infrastructure.persistence.command_log_repository import CommandLogRepository
 from src.infrastructure.persistence.device_repository import DeviceRepository
 from src.infrastructure.persistence.execution_log_repository import ExecutionLogRepository
+from src.interfaces.api.event_bus import get_event_bus
 
 router = APIRouter(prefix="/api/commands", tags=["commands"])
 
 
-def get_command_service(session: Session = Depends(get_db)) -> CommandService:
+def get_command_service(
+    session: Session = Depends(get_db),
+    bus: EventBus = Depends(get_event_bus),
+) -> CommandService:
     states = ActuatorStateRepository(session)
     executions = ActuatorExecutionService(
         DeviceRepository(session), states, ExecutionLogRepository(session)
     )
     return CommandService(
         states,
-        ActuatorStateService(states),
+        ActuatorStateService(states, bus),
         executions,
         CommandLogRepository(session),
+        bus,
     )
 
 

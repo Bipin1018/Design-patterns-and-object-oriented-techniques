@@ -33,6 +33,15 @@ class ActuatorStateRepository:
             )
         ).scalar_one_or_none()
 
+    def placement(self, device_id: UUID) -> tuple[UUID | None, UUID | None]:
+        """The device's (location_id, zone_id). Both None if it has no zone."""
+        row = self._session.execute(
+            select(DeviceRow.location_id, DeviceRow.zone_id).where(DeviceRow.id == device_id)
+        ).one_or_none()
+        if row is None:
+            return None, None
+        return row.location_id, row.zone_id
+
     def get(self, device_id: UUID, *, for_update: bool = False) -> StoredState | None:
         """One stored state. for_update locks the row until the next commit."""
         query = select(ActuatorStateRow).where(ActuatorStateRow.device_id == device_id)

@@ -505,3 +505,52 @@ export async function runCommand(
   const detail = await errorDetail(response, `Command failed with status ${response.status}`)
   throw new ApiError(detail, response.status)
 }
+
+// ---------------------------------------------------------------------------
+// Alerts (Phase 11 — Observer)
+// ---------------------------------------------------------------------------
+
+export type AlertSeverity = 'info' | 'warning' | 'critical'
+
+export type AlertStatus = 'active' | 'resolved'
+
+/** What GET /api/alerts accepts for status. 'all' is only a filter. */
+export type AlertStatusFilter = AlertStatus | 'all'
+
+/** One alert. Matches AlertDto on the backend. */
+export interface AlertDto {
+  id: string
+  /** Both null when the device has no zone. */
+  location_id: string | null
+  zone_id: string | null
+  /** Null if the device was deleted. */
+  device_id: string | null
+  severity: AlertSeverity
+  message: string
+  /** What caused it: threshold.crossed, command.failed or state.changed. */
+  event_type: string
+  status: AlertStatus
+  created_at: string
+}
+
+export interface AlertFilters {
+  status?: AlertStatusFilter
+  locationId?: string
+  zoneId?: string
+  /** ISO time: only alerts created at or after it. */
+  since?: string
+  limit?: number
+}
+
+/** Newest first. The backend defaults to status=active and limit=50. */
+export function fetchAlerts(filters: AlertFilters = {}, signal?: AbortSignal): Promise<AlertDto[]> {
+  const params = new URLSearchParams()
+  if (filters.status) params.set('status', filters.status)
+  if (filters.locationId) params.set('location_id', filters.locationId)
+  if (filters.zoneId) params.set('zone_id', filters.zoneId)
+  if (filters.since) params.set('since', filters.since)
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit))
+
+  const query = params.toString()
+  return request<AlertDto[]>(`/api/alerts${query ? `?${query}` : ''}`, signal)
+}

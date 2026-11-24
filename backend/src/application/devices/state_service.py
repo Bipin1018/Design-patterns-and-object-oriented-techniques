@@ -3,6 +3,10 @@
 The service never decides whether a move is legal. ActuatorContext does. The
 service only owns the order: load the stored state, let the context guard the
 move, and write only if the guard let it through.
+
+Phase 11: this is the "ActuatorTransitionService" from the requirements.
+After every successful save it publishes ActuatorStateChanged. It doesn't
+know about alerts; the subscriber decides what an error means.
 """
 
 from datetime import datetime
@@ -11,6 +15,8 @@ from uuid import UUID
 from src.application.devices.dto import ActuatorStateDto, DeviceDto
 from src.domain.actuators.context import ActuatorContext
 from src.domain.actuators.state import INITIAL_STATE
+from src.domain.events.bus import EventBus
+from src.domain.events.events import ActuatorStateChanged
 from src.infrastructure.persistence.actuator_state_repository import ActuatorStateRepository
 
 ACTUATOR_ROLE = "actuator"
@@ -21,8 +27,9 @@ class ActuatorNotFoundError(LookupError):
 
 
 class ActuatorStateService:
-    def __init__(self, repository: ActuatorStateRepository) -> None:
+    def __init__(self, repository: ActuatorStateRepository, bus: EventBus) -> None:
         self._repository = repository
+        self._bus = bus
 
     # -- Read side: put state on device DTOs ----------------------------------
 
@@ -70,11 +77,24 @@ class ActuatorStateService:
         # Locked, so two requests at once cannot both pass the guard from the
         # same starting state.
         stored = self._repository.get(device_id, for_update=True)
-        context = ActuatorContext(device_type, stored.state if stored else INITIAL_STATE)
+        previous = stored.state if stored else INITIAL_STATE
+        context = ActuatorContext(device_type, previous)
 
         context.transition(target)  # raises before anything is written
 
         saved = self._repository.save(device_id, context.state)
+
+        # Publish after saving. An illegal move already raised above.
+        location_id, zone_id = self._repository.placement(device_id)
+        self._bus.publish(
+            ActuatorStateChanged(
+                device_id=device_id,
+                location_id=location_id,
+                zone_id=zone_id,
+                previous_state=previous,
+                state=saved.state,
+            )
+        )
         return self._to_dto(device_id, context, saved.updated_at)
 
     # -- Helpers ---------------------------------------------------------------
