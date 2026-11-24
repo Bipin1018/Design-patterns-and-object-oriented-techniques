@@ -48,6 +48,11 @@ translate domain errors into HTTP responses. The frontend never decides what is
 legal; it displays what the API returns. All backend calls from the frontend
 go through `frontend/src/services/api.ts`.
 
+Since Phase 11, services that change something publish an event on one
+in-process event bus. Reactions such as alerts are subscribers on that bus, so
+the services that do the work never import them. The bus and its subscribers
+are wired in one place, `interfaces/api/event_bus.py`.
+
 ## Getting started
 
 ### Prerequisites
@@ -92,7 +97,10 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/devices/provision?family=simul
 ```
 
 Locations and zones can then be created from the Configuration section of the
-dashboard.
+dashboard, or with `POST /api/locations/config`. Place a moisture sensor in a
+zone and take a few readings to see alerts in the Events section. Simulated
+moisture is always between 0.20 and 0.60, so a zone only raises alerts if its
+low threshold is above some of those values.
 
 ### Daily use
 
@@ -127,6 +135,8 @@ deletes the database volume; run `alembic upgrade head` again afterwards.
 | 7 | Facade | Single location overview |
 | 8 | State | Actuator lifecycle |
 | 9 | Decorator | Actuator policies and execution log |
+| 10 | Command | Actuator commands with a history |
+| 11 | Observer | Event bus, alerts and the event feed |
 
 Each pattern has a short write-up in [`docs/patterns/`](docs/patterns/), and the
 answers to each phase's questions are in [`Questions_Phases/`](Questions_Phases/).
@@ -296,12 +306,78 @@ successful ones.
 | Blocked | false | `["maxRunTime", "logging"]` | Max run time exceeded |
 
 - **Adds:** the `actuator_execution_log` table,
-  `GET /api/actuators/executions`, a demo `POST /api/actuators/{id}/apply`
-  (409 when blocked), and the execution log in the Controls section.
+  `GET /api/actuators/executions`, and the execution log in the Controls
+  section. Phase 9 also had a demo `POST /api/actuators/{id}/apply`; Phase 10
+  removed it, so every command now goes through `POST /api/commands`.
 - **Key files:** `infrastructure/adapters/actuators/logging_decorator.py`,
   `infrastructure/adapters/actuators/max_runtime_decorator.py`,
   `application/actuators/execution_service.py`.
 - **Doc:** [`decorator.md`](docs/patterns/decorator.md)
+
+### Phase 10 — Command
+
+**Problem:** sending a word like `"start_pump"` straight to an actuator gave
+no single place to check whether the command is allowed right now, update the
+state, and keep a history of what was asked.
+
+**Solution:** each command is an object with a `device_id`, a payload, the
+state it should leave the actuator in, and one `execute(port)` method.
+`StartPumpCommand`, `StopPumpCommand` and `SetLightLevelCommand` are looked up
+by name in a registry, so there is no `if command_type == ...` anywhere.
+`CommandService` runs every command the same way:
+
+1. Not an actuator: 404, nothing saved.
+2. Unknown command or bad payload: 400, nothing saved.
+3. Not allowed in the current state: saved as `rejected`, 409.
+4. Sent through the Phase 9 decorators. If max run time blocks it: saved as
+   `failed`, state unchanged.
+5. Otherwise the state moves (only if it actually changes) and the command is
+   saved as `success`.
+
+`set_light_level` takes `{"level": 0-100}` and defaults to 1. Setting the level
+on a light that is already on does not count as a state change.
+
+- **Adds:** the `command_log` table, `POST /api/commands`,
+  `GET /api/commands`, and command buttons with a history table in the
+  Controls section. Buttons are disabled when the command is not in
+  `allowed_commands`.
+- **Key files:** `domain/commands/`, `application/commands/service.py`,
+  `frontend/src/components/commands/CommandPanel.tsx`.
+- **Doc:** [`command.md`](docs/patterns/command.md)
+
+### Phase 11 — Observer
+
+**Problem:** a dry bench, a failed command or a broken actuator should raise an
+alert. Writing alerts from the reading, command and state code would tie all
+three to the alerts table, and every new reaction would mean editing them again.
+
+**Solution:** those services publish events on an `EventBus` and don't know
+who is listening. Two subscribers react:
+
+- `MoistureThresholdSubscriber` checks each `reading.created`. A moisture
+  reading from a sensor in a zone, strictly below that zone's low threshold,
+  becomes `threshold.crossed`.
+- `AlertPersistenceSubscriber` is the only code that writes to `alerts`.
+
+| Event | Severity | Message |
+|---|---|---|
+| `threshold.crossed` | warning | Moisture below zone low |
+| `command.failed` | warning | the failure, e.g. Max run time exceeded |
+| `state.changed` (only into `error`) | critical | Actuator entered error |
+
+A manual read, the sampler and MQTT all go through `ReadingIngest`, which saves
+the reading and then publishes. If `tracking_enabled` is off, the reading is
+saved but nothing is published. Each event copies `location_id` and `zone_id`
+from the device; a device with no zone stores null for both. If one subscriber
+fails, the bus logs it and still calls the others.
+
+- **Adds:** the `alerts` table, `GET /api/alerts`, the Events section on the
+  dashboard (polls every 5 seconds, filters by location, zone and status), and
+  a `services/realtime.ts` stub that Phase 12 replaces with a WebSocket.
+- **Key files:** `domain/events/bus.py`, `domain/events/events.py`,
+  `application/alerts/subscribers.py`, `interfaces/api/event_bus.py`,
+  `frontend/src/components/alerts/EventFeed.tsx`.
+- **Doc:** [`observer.md`](docs/patterns/observer.md)
 
 ## Database
 
@@ -316,9 +392,13 @@ All schema changes are Alembic migrations in `backend/alembic/versions/`.
 | `automation_rules` | 6 | The chosen strategy per location |
 | `actuator_states` | 8 | Current lifecycle state per actuator |
 | `actuator_execution_log` | 9 | Every attempt to apply an actuator command |
+| `command_log` | 10 | Every command sent: success, failed or rejected |
+| `alerts` | 11 | Alerts saved by the alert subscriber |
 
-Foreign keys from readings, states and execution rows to `devices` use
-`ON DELETE CASCADE`.
+Foreign keys from readings, states, execution rows and commands to `devices`
+use `ON DELETE CASCADE`. The `alerts` foreign keys to devices, locations and
+zones are nullable and use `ON DELETE SET NULL`, so an alert stays after the
+thing it was about is deleted.
 
 ## API overview
 
@@ -335,11 +415,15 @@ http://localhost:8000/scalar.
 | Zones | `POST /api/locations/{id}/zones` · `PATCH`, `DELETE /api/locations/{id}/zones/{zone_id}` · `GET .../zones/{zone_id}/devices` |
 | Automation | `GET /api/automation/strategies` · `GET`, `PUT /api/locations/{id}/automation` · `POST /api/locations/{id}/automation/evaluate` |
 | Overview | `GET /api/locations/{id}/overview` |
-| Actuators | `GET /api/actuators/executions` · `POST /api/actuators/{id}/apply` |
+| Actuators | `GET /api/actuators/executions` |
+| Commands | `POST /api/commands` · `GET /api/commands` |
+| Alerts | `GET /api/alerts?status=&location_id=&zone_id=&since=&limit=` |
 
 Error conventions: 400 for invalid input, 404 for a missing resource, 409 for
 a request that conflicts with the current state (an illegal transition or a
-blocked command).
+rejected command). A rejected command still returns its `command_log` row with
+the 409. `GET /api/alerts` returns 400 for a `status` other than `active`,
+`resolved` or `all`.
 
 ## Quality checks
 
@@ -354,8 +438,9 @@ docker compose exec frontend npm run lint
 ```
 
 Unit tests for the domain (creators, factories, builder, adapters, strategies,
-state machine, decorators) run without a database. The API tests need the
-stack running. They create their own devices and delete them afterwards.
+state machine, decorators, commands, event bus) run without a database. The
+API tests need the stack running. They create their own devices and delete
+them afterwards, together with any alerts they caused.
 
 ## Project layout
 
@@ -373,16 +458,20 @@ stack running. They create their own devices and delete them afterwards.
 │       │   ├── devices/        Device entity, family factories, sampling
 │       │   ├── locations/      Location config builder
 │       │   ├── automation/     Strategies
-│       │   └── actuators/      Ports, states, policies
-│       ├── application/        Services, DTOs, mappers, facade
+│       │   ├── actuators/      Ports, states, policies
+│       │   ├── commands/       Command classes, registry, invoker
+│       │   └── events/         Domain events and the event bus
+│       ├── application/        Services, DTOs, mappers, facade, alert subscribers
 │       ├── infrastructure/
 │       │   ├── adapters/       Sensor adapters, actuator adapter and decorators
 │       │   └── persistence/    ORM models and repositories
-│       ├── interfaces/api/     HTTP routers
+│       ├── interfaces/api/     HTTP routers, and event_bus.py which wires the bus
 │       └── main.py             App, CORS, sampler, Scalar
 └── frontend/src/
     ├── services/api.ts         The only place that calls the backend
-    ├── components/             Devices, configuration, overview, actuators
+    ├── services/realtime.ts    Stub for live events (WebSocket in Phase 12)
+    ├── components/             Devices, configuration, overview, actuators,
+    │                           commands, alerts
     ├── features/               Sensors and automation
     └── pages/                  Home and dashboard
 ```
@@ -404,6 +493,11 @@ check that `greenhouse-postgres` is healthy. Check that `DATABASE_URL` uses the
 without a migration. Generate one with
 `docker compose exec backend alembic revision --autogenerate -m "<name>"`,
 review it, then upgrade.
+
+**The Events section stays empty.** Check that Status is set to Active. Check
+that the sensor is placed in a zone and has tracking on, because untracked
+readings are not published. Simulated moisture never goes below 0.20, so a
+zone with a low threshold of 0.20 never raises an alert from the simulator.
 
 **`ModuleNotFoundError: No module named 'src'` outside Docker.** Run Uvicorn
 from `backend/`, or install the backend with `pip install -e ".[dev]"`.
